@@ -1,0 +1,52 @@
+{
+  "name": "janseva-x-citizen-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JANSEVA-X citizen backend services, application management, and prototype document analysis layer (Batch 4)",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:types": "tsc -p tsconfig.test.json",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0",
+    "bcryptjs": "2.4.3",
+    "cors": "2.8.5",
+    "dotenv": "16.6.1",
+    "express": "4.21.2",
+    "express-rate-limit": "7.5.0",
+    "helmet": "8.1.0",
+    "jsonwebtoken": "9.0.2",
+    "morgan": "1.10.0",
+    "multer": "^2.0.2",
+    "pdf-parse": "^1.1.1",
+    "tesseract.js": "^5.1.1",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/cors": "2.8.17",
+    "@types/express": "5.0.1",
+    "@types/jsonwebtoken": "9.0.9",
+    "@types/morgan": "1.9.9",
+    "@types/multer": "^1.4.12",
+    "@types/node": "22.13.14",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/supertest": "6.0.2",
+    "prisma": "6.19.0",
+    "supertest": "7.1.0",
+    "tsx": "4.19.3",
+    "typescript": "5.8.2",
+    "vitest": "3.1.1"
+  }
+}
