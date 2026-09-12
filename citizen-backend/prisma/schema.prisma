@@ -51,6 +51,30 @@ enum VerificationStatus {
   MANUAL_REVIEW
 }
 
+enum FingerprintSessionStatus {
+  PENDING_PAIRING
+  PAIRED
+  COMPLETED
+  EXPIRED
+}
+
+enum FingerprintStep {
+  RIGHT_INDEX
+  RIGHT_MIDDLE
+  RIGHT_RING
+  RIGHT_PINKY
+  RIGHT_THUMB
+}
+
+enum FingerprintSessionEventType {
+  CREATED
+  RESTARTED
+  PAIRED
+  STEP_COMPLETED
+  COMPLETED
+  EXPIRED
+}
+
 enum ConsentStatus {
   GRANTED
   DECLINED
@@ -116,6 +140,7 @@ model CitizenProfile {
   user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   applications       Application[]
   verifications      Verification[]
+  fingerprintSessions FingerprintSession[]
   consents           Consent[]
   conversations      AIConversation[]
 
@@ -206,6 +231,7 @@ model Application {
   assignedOfficer       Officer?                   @relation(fields: [assignedOfficerId], references: [id], onDelete: SetNull)
   applicationDocuments  ApplicationDocument[]
   verifications         Verification[]
+  fingerprintSessions   FingerprintSession[]
   consents              Consent[]
   statusHistory         ApplicationStatusHistory[]
   generatedDocuments    GeneratedDocument[]
@@ -275,12 +301,52 @@ model Verification {
   application      Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   citizen          CitizenProfile     @relation(fields: [citizenId], references: [id], onDelete: Restrict)
   document         Document?          @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  fingerprintSession FingerprintSession?
 
   @@index([applicationId, status])
   @@index([citizenId, type])
   @@index([documentId])
   @@unique([documentId, type])
   @@map("verifications")
+}
+
+// QR pairing/session state only. No fingerprint images, templates, minutiae, or biometric secrets are stored.
+model FingerprintSession {
+  id                   String                   @id @default(uuid()) @map("fingerprint_session_id") @db.Uuid
+  verificationId       String                   @unique @map("verification_id") @db.Uuid
+  applicationId        String                   @map("application_id") @db.Uuid
+  citizenId            String                   @map("citizen_id") @db.Uuid
+  status               FingerprintSessionStatus @default(PENDING_PAIRING)
+  pairingChallengeHash String                   @map("pairing_challenge_hash") @db.Char(64)
+  providerReference    String                   @map("provider_reference") @db.VarChar(255)
+  completedSteps       FingerprintStep[]        @default([]) @map("completed_steps")
+  pairedAt             DateTime?                @map("paired_at")
+  completedAt          DateTime?                @map("completed_at")
+  expiresAt            DateTime                 @map("expires_at")
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  verification         Verification             @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+  application          Application              @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  citizen              CitizenProfile           @relation(fields: [citizenId], references: [id], onDelete: Restrict)
+  events               FingerprintSessionEvent[]
+
+  @@index([applicationId, citizenId])
+  @@index([expiresAt])
+  @@map("fingerprint_sessions")
+}
+
+// Immutable safe audit entries for QR-session operations. Metadata never contains a pairing challenge or biometric data.
+model FingerprintSessionEvent {
+  id          String                      @id @default(uuid()) @map("fingerprint_session_event_id") @db.Uuid
+  sessionId   String                      @map("fingerprint_session_id") @db.Uuid
+  type        FingerprintSessionEventType
+  step        FingerprintStep?
+  metadata    Json?
+  createdAt   DateTime                    @default(now()) @map("created_at")
+  session     FingerprintSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("fingerprint_session_events")
 }
 
 model Consent {

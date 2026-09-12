@@ -1,6 +1,6 @@
 # JANSEVA-X Citizen Backend API Documentation
 
-This document describes the implemented Batch 3 HTTP surface only.
+This document describes the implemented Citizen Backend surface through Batch 5.
 
 ## Response convention
 
@@ -107,6 +107,32 @@ The response analysis is exactly: `documentType`, numeric `confidence`, nullable
 Returns the persisted structured prototype analysis or `analysis: null` when no analysis has been run.
 
 Image OCR uses Tesseract.js. PDF processing extracts embedded text using `pdf-parse`; scanned PDFs without embedded text cannot yet be rasterized for OCR. No external LLM is required or configured: deterministic local heuristics are the active fallback and never invent unknown values.
+
+## Batch 5 identity-verification demo
+
+All endpoints below require a `CITIZEN` bearer token. Verification mutations require an owned `SUBMITTED` application; safe retries after `IDENTITY_VERIFIED` are supported. `GET` summary is read-only and available for an owned application in any status, including `DRAFT`. All results are explicitly `DEMO`/`MOCK`: JANSEVA-X does not contact UIDAI, PAN/CBDT, biometric hardware, e-KYC, e-sign, DigiLocker, or government systems.
+
+### Aadhaar and PAN
+
+`POST /api/applications/:applicationId/verifications/aadhaar` accepts `{ "aadhaar": "XXXX-XXXX-1234" }` or a demo 12-digit value and returns only `XXXX-XXXX-1234` style data and a demo reference. `POST /api/applications/:applicationId/verifications/pan` accepts a demo PAN or masked PAN, returns a masked PAN plus synthetic taxpayer data, and never stores the raw submitted value.
+
+### Face and e-KYC
+
+`POST /api/applications/:applicationId/verifications/face/start` starts a temporary demo session; `POST /api/verifications/:verificationId/face/complete` returns simulated match/liveness/confidence metadata. Neither endpoint accepts or stores an image, embedding, or biometric template.
+
+`POST /api/applications/:applicationId/verifications/ekyc` requires completed application-level Aadhaar and PAN demo records and returns synthetic references only.
+
+### Fingerprint QR prototype
+
+`POST /api/applications/:applicationId/verifications/fingerprint/start` returns a ten-minute QR-safe pairing payload and the session ID. A repeated start cannot overwrite an active session; it returns `409`. Pair with `POST /api/fingerprint-sessions/:sessionId/pair` using the one-time challenge. Repeated pairing is rejected.
+
+Complete each empty-body step at `POST /api/fingerprint-sessions/:sessionId/steps/:step/complete`, strictly in this order: `RIGHT_INDEX`, `RIGHT_MIDDLE`, `RIGHT_RING`, `RIGHT_PINKY`, `RIGHT_THUMB`. A conditional update makes each step successful at most once. `GET /api/fingerprint-sessions/:sessionId/status` returns only safe state, completed/remaining steps, expiry, and demo verification result.
+
+The pairing challenge is stored only as a SHA-256 hash. Session creation, pairing, each completed step, completion, restart, and expiry are stored as immutable safe audit events. This is a QR/browser sequence demonstration, not real fingerprint capture or verification.
+
+### Summary and status
+
+`GET /api/applications/:applicationId/verifications/summary` aggregates only application-level (`documentId: null`) Aadhaar, PAN, face, fingerprint, and e-KYC records. Document-linked records cannot affect the identity result. When Aadhaar, PAN, face, and fingerprint are all verified, the backend transitions only from `SUBMITTED` to `IDENTITY_VERIFIED` and records status history; it never approves or rejects an application.
 
 ## Health check
 

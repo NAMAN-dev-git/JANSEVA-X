@@ -1,6 +1,6 @@
 # JANSEVA-X Citizen Backend
 
-JANSEVA-X is a prototype government document-services platform. Batch 4 adds citizen document upload, local storage, OCR, deterministic document analysis, and prototype document-consistency verification to the Batch 3 Citizen Backend.
+JANSEVA-X is a prototype government document-services platform. Batch 5 adds a citizen-side identity-verification demonstration using deterministic mock providers and a QR pairing flow; it preserves the Batch 1–4 document workflow.
 
 ## Implemented scope
 
@@ -10,12 +10,36 @@ JANSEVA-X is a prototype government document-services platform. Batch 4 adds cit
 - Public active-service and service-requirement catalogue APIs.
 - Citizen-owned draft creation, listing, details, data update, status history, and `DRAFT` to `SUBMITTED` submission.
 - Citizen-owned PDF/JPG/JPEG/PNG uploads (10 MB maximum), SHA-256 metadata, safe local storage, OCR, structured extraction, explainable mismatch detection, and persisted prototype document checks.
+- Submitted-application Aadhaar, PAN, face, fingerprint-QR, and e-KYC demo verification APIs, all stored in the existing `Verification` model.
 - JWT bearer authentication, hashed password storage, hashed refresh-token storage, Helmet, CORS, rate limiting, Zod validation, request IDs, request logging, and centralized error handling.
 - `GET /api/health`.
 
+## Batch 5 identity verification demo
+
+All Batch 5 endpoints require a citizen bearer token and enforce application, verification, and QR-session ownership. Verification mutations are available only for `SUBMITTED` applications (or safe retries after `IDENTITY_VERIFIED`); the owned verification summary is intentionally readable for any application status, including `DRAFT`. Aadhaar, PAN, face, and fingerprint completion move an application to the existing `IDENTITY_VERIFIED` status and write `ApplicationStatusHistory`; e-KYC is an optional synthetic capstone that requires Aadhaar and PAN first.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/applications/:applicationId/verifications/aadhaar` |
+| POST | `/api/applications/:applicationId/verifications/pan` |
+| POST | `/api/applications/:applicationId/verifications/face/start` |
+| POST | `/api/verifications/:verificationId/face/complete` |
+| POST | `/api/applications/:applicationId/verifications/fingerprint/start` |
+| POST | `/api/fingerprint-sessions/:sessionId/pair` |
+| POST | `/api/fingerprint-sessions/:sessionId/steps/:step/complete` |
+| GET | `/api/fingerprint-sessions/:sessionId/status` |
+| POST | `/api/applications/:applicationId/verifications/ekyc` |
+| GET | `/api/applications/:applicationId/verifications/summary` |
+
+Fingerprint is a ten-minute QR/browser pairing prototype with this enforced sequence: `RIGHT_INDEX`, `RIGHT_MIDDLE`, `RIGHT_RING`, `RIGHT_PINKY`, `RIGHT_THUMB`. It does not capture, infer, or verify a physical finger. The database stores only the hash of the temporary pairing challenge and completed step labels. An active session cannot be overwritten by a repeated start; expired sessions may be restarted. Pairing and steps are conditional transactional updates, so a step succeeds at most once.
+
+The provider classes (`MockAadhaarProvider`, `MockPanProvider`, `MockFaceVerificationProvider`, `MockFingerprintProvider`, and `MockEkycProvider`) are intentionally deterministic and replaceable. Results always include `DEMO`/`MOCK` labelling. No raw Aadhaar, PAN, face image, embedding, fingerprint, minutiae, OTP secret, real e-KYC document, or government credential is persisted.
+
+**JANSEVA-X does not connect to UIDAI, PAN/CBDT, biometric hardware, an e-KYC provider, e-sign infrastructure, or any government authentication service.**
+
 ## Not implemented
 
-Live Aadhaar/PAN/biometric/e-KYC verification, consent, officer review, correction handling, approval/rejection, e-signing, generated documents, and all frontend work remain outside Batch 4. OCR and analysis do not verify document authenticity or government records.
+Live Aadhaar/PAN/biometric/e-KYC verification, consent, officer review, correction handling, approval/rejection, e-signing, generated documents, and all frontend work remain outside Batch 5. OCR and analysis do not verify document authenticity or government records.
 
 ## Setup
 
@@ -58,6 +82,8 @@ npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:seed
 ```
+
+Batch 5 adds the additive migration `20260912_batch5_identity_verification_demo`; inspect it, then apply it through the normal `npm run prisma:migrate` workflow. Do not use `prisma db push` or `prisma migrate reset`.
 
 ## API overview
 

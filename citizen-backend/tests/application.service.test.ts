@@ -9,7 +9,7 @@ import {
   type ServiceWithRequirements,
 } from "../src/repositories/application.repository";
 import { ApplicationService } from "../src/services/application.service";
-import { assertCitizenStatusTransition } from "../src/services/application-status.service";
+import { assertCitizenStatusTransition, assertIdentityVerificationTransition } from "../src/services/application-status.service";
 import { CatalogService } from "../src/services/catalog.service";
 import { AppError } from "../src/utils/app-error";
 
@@ -223,6 +223,11 @@ describe("ApplicationService", () => {
   it("rejects invalid citizen status transitions", () => {
     expect(() => assertCitizenStatusTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).not.toThrow();
     expect(() => assertCitizenStatusTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.SUBMITTED)).toThrow(AppError);
+  });
+
+  it("allows only the verification-service transition to IDENTITY_VERIFIED", () => {
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.IDENTITY_VERIFIED)).not.toThrow();
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.DRAFT, ApplicationStatus.IDENTITY_VERIFIED)).toThrow(AppError);
   });
 
   it("prevents one citizen from reading, updating, or submitting another citizen application", async () => {

@@ -117,6 +117,29 @@ Application ownership is always derived from the bearer token's `userId`, resolv
 
 The create endpoint does not yet accept an idempotency key; clients should avoid retrying a create request after an unknown network outcome.
 
+## Batch 5 identity-verification demo contract
+
+Batch 5 activates the existing `Verification` types `AADHAAR`, `PAN`, `FACE`, `FINGERPRINT`, and `E_KYC`; it does not create a duplicate verification entity. All endpoints require a `CITIZEN` bearer token, scope ownership through the authenticated citizen profile, and return `404` for records outside that scope.
+
+| Method | Path | Request / behaviour |
+| --- | --- | --- |
+| POST | `/api/applications/:applicationId/verifications/aadhaar` | `{ "aadhaar": "XXXX-XXXX-1234" }` or demo 12 digits; returns a masked result and `DEMO-AADHAAR-*` reference. |
+| POST | `/api/applications/:applicationId/verifications/pan` | `{ "pan": "ABCDE1234F" }` or masked demo value; returns `ABCDE****F`, synthetic taxpayer data, and `DEMO-PAN-*`. |
+| POST | `/api/applications/:applicationId/verifications/face/start` | Empty body; creates/reuses a demo face session. |
+| POST | `/api/verifications/:verificationId/face/complete` | Empty body; produces simulated match/liveness/confidence metadata only. |
+| POST | `/api/applications/:applicationId/verifications/fingerprint/start` | Empty body; returns QR-safe pairing payload, expiry, and required steps. A second start while active returns `409`; an expired session may be restarted. |
+| POST | `/api/fingerprint-sessions/:sessionId/pair` | `{ "pairingChallenge": "uuid" }`; validates the hashed challenge. |
+| POST | `/api/fingerprint-sessions/:sessionId/steps/:step/complete` | Empty body; only `RIGHT_INDEX → RIGHT_MIDDLE → RIGHT_RING → RIGHT_PINKY → RIGHT_THUMB` is valid. |
+| GET | `/api/fingerprint-sessions/:sessionId/status` | Current pairing/state/steps/expiry and safe final demo result. |
+| POST | `/api/applications/:applicationId/verifications/ekyc` | Empty body; requires verified Aadhaar and PAN and creates synthetic e-KYC references. |
+| GET | `/api/applications/:applicationId/verifications/summary` | Safe aggregate Aadhaar/PAN/face/fingerprint/e-KYC state. |
+
+Identity mutations require `SUBMITTED`; status-safe retries after `IDENTITY_VERIFIED` are permitted. The owned summary endpoint is intentionally read-only and available for every application status, including `DRAFT`. When the four core demo records (Aadhaar, PAN, face, fingerprint) are verified, the backend advances only to the existing `IDENTITY_VERIFIED` status and records `ApplicationStatusHistory`. It never approves or rejects an application. e-KYC is an optional synthetic capstone, not a real identity credential.
+
+`FingerprintSession` and its immutable `FingerprintSessionEvent` trail are the Batch 5 schema additions. They store a SHA-256 pairing-challenge hash, safe provider reference, expiry, event type, and step enum values. They do not store fingerprint images, templates, minutiae, physical-finger claims, face images/embeddings, unmasked Aadhaar/PAN, OTPs, raw challenges, or real tokens.
+
+**JANSEVA-X does not connect to real UIDAI, PAN/CBDT, biometric hardware, e-KYC, e-sign, DigiLocker, or government authentication infrastructure. All provider output is deterministic `DEMO`/`MOCK` output.**
+
 ## Prototype verification boundary
 
 `AADHAAR`, `PAN`, `FACE`, `FINGERPRINT`, and `E_KYC` are future prototype verification types only. They do not represent live UIDAI integration, real PAN API access, government biometric-gateway access, legally valid e-signing, or a real e-KYC provider. Seed data contains synthetic demo identities only.
