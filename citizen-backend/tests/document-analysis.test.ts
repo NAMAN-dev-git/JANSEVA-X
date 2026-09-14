@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { readFile } from "fs/promises";
-import { DocumentStatus, VerificationStatus, type CitizenProfile } from "@prisma/client";
+import { ApplicationStatus, DocumentStatus, VerificationStatus, type CitizenProfile } from "@prisma/client";
 import type { Express } from "express";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AppError } from "../src/utils/app-error";
@@ -37,7 +37,7 @@ class MemoryDocumentRepository implements DocumentRepository {
 
   constructor() {
     this.application = {
-      id: "application-1", citizenId: this.citizen.id, formData: { fullName: "Demo Citizen", dateOfBirth: "01/01/1990" },
+      id: "application-1", citizenId: this.citizen.id, status: ApplicationStatus.DRAFT, formData: { fullName: "Demo Citizen", dateOfBirth: "01/01/1990" },
       service: { requirements: [{ id: "requirement-identity", name: "Identity Proof", isRequired: true }, { id: "requirement-address", name: "Address Proof", isRequired: true }] },
       applicationDocuments: [],
     };
@@ -107,6 +107,15 @@ describe("DocumentService", () => {
     await expect(service.get("user-1", document.id)).resolves.toMatchObject({ id: document.id, status: DocumentStatus.UPLOADED });
   });
 
+  it.each([ApplicationStatus.IDENTITY_VERIFIED, ApplicationStatus.SUBMITTED, ApplicationStatus.APPROVED, ApplicationStatus.SIGNED, ApplicationStatus.COMPLETED])("blocks document mutation after %s", async (status) => {
+    const document = await service.upload("user-1", "application-1", { file: makeFile() });
+    repository.application.status = status;
+
+    await expect(service.upload("user-1", "application-1", { file: makeFile() })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(service.delete("user-1", document.id)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(service.analyze("user-1", document.id)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
   it("rejects unsupported MIME/extension and files over 10 MB", async () => {
     await expect(service.upload("user-1", "application-1", { file: makeFile("bad", "text/plain", "bad.txt") })).rejects.toMatchObject({ statusCode: 400 });
     const oversized = makeFile(validPng(), "image/png", "large.png"); oversized.size = 10 * 1024 * 1024 + 1;
@@ -158,6 +167,16 @@ describe("DocumentService", () => {
     expect(result.document.status).toBe(DocumentStatus.PENDING_VERIFICATION);
     expect(repository.verificationUpdates).toBe(1);
     await expect(service.verification("user-1", document.id)).resolves.toMatchObject({ documentType: "AADHAAR", signatureDetected: "NOT_AVAILABLE" });
+  });
+
+  it("masks identifier output and does not persist raw OCR text", async () => {
+    const document = await service.upload("user-1", "application-1", { file: makeFile(), expectedDocumentType: "AADHAAR", requirementId: "requirement-identity" });
+    const result = await service.analyze("user-1", document.id);
+
+    expect(result.analysis.fields.documentNumber).toBe("XXXX-XXXX-9012");
+    expect(JSON.stringify(repository.documents.get(document.id).aiExtractionResult)).not.toContain("1234 5678 9012");
+    expect(JSON.stringify(repository.documents.get(document.id).aiExtractionResult)).not.toContain("123456789012");
+    expect(repository.documents.get(document.id).aiExtractionResult.ocr).toEqual({ provider: "TesseractOcrProvider", textLength: expect.any(Number) });
   });
 
   it("associates an unambiguous expected type with its matching service requirement", async () => {

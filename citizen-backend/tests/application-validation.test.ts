@@ -24,8 +24,13 @@ describe("application route authentication", () => {
     await request(app).get("/api/applications").expect(401);
     await request(app).post("/api/applications").send({ serviceId: "72bc96e1-01a4-4c7c-8b1f-0896e559c8b9" }).expect(401);
     await request(app).get("/api/applications/e1529f39-9841-496a-9395-fce72b638dc8").expect(401);
+    await request(app).get("/api/applications/e1529f39-9841-496a-9395-fce72b638dc8/generated-documents").expect(401);
+    await request(app).post("/api/applications/e1529f39-9841-496a-9395-fce72b638dc8/complete").send({}).expect(401);
     await request(app).post("/api/applications/e1529f39-9841-496a-9395-fce72b638dc8/documents").expect(401);
     await request(app).post("/api/documents/e1529f39-9841-496a-9395-fce72b638dc8/analyze").expect(401);
     await request(app).delete("/api/documents/e1529f39-9841-496a-9395-fce72b638dc8").expect(401);
+    await request(app).get("/api/generated-documents/e1529f39-9841-496a-9395-fce72b638dc8").expect(401);
+    await request(app).post("/api/generated-documents/e1529f39-9841-496a-9395-fce72b638dc8/signing-sessions").send({}).expect(401);
+    await request(app).post("/api/generated-document-signing-sessions/e1529f39-9841-496a-9395-fce72b638dc8/complete").send({}).expect(401);
   });
 });

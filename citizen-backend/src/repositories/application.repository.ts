@@ -8,6 +8,7 @@ export type ApplicationDetails = Prisma.ApplicationGetPayload<{
     service: { include: { requirements: true } };
     statusHistory: true;
     applicationDocuments: { include: { document: true } };
+    generatedDocuments: true;
   };
 }>;
 
@@ -90,6 +91,7 @@ export class PrismaApplicationRepository implements ApplicationRepository {
         service: { include: { requirements: { orderBy: { sortOrder: "asc" } } } },
         statusHistory: { orderBy: { createdAt: "asc" } },
         applicationDocuments: { include: { document: true }, orderBy: { createdAt: "asc" } },
+        generatedDocuments: { orderBy: { generatedAt: "asc" } },
       },
     });
   }
@@ -105,7 +107,7 @@ export class PrismaApplicationRepository implements ApplicationRepository {
   async submitDraftApplication(applicationId: string, citizenId: string, userId: string, submittedAt: Date): Promise<ApplicationDetails | null> {
     return prisma.$transaction(async (transaction) => {
       const updated = await transaction.application.updateMany({
-        where: { id: applicationId, citizenId, status: ApplicationStatus.DRAFT },
+        where: { id: applicationId, citizenId, status: ApplicationStatus.IDENTITY_VERIFIED },
         data: { status: ApplicationStatus.SUBMITTED, submittedAt },
       });
       if (updated.count !== 1) return null;
@@ -120,6 +122,7 @@ export class PrismaApplicationRepository implements ApplicationRepository {
           service: { include: { requirements: { orderBy: { sortOrder: "asc" } } } },
           statusHistory: { orderBy: { createdAt: "asc" } },
           applicationDocuments: { include: { document: true }, orderBy: { createdAt: "asc" } },
+          generatedDocuments: { orderBy: { generatedAt: "asc" } },
         },
       });
     });

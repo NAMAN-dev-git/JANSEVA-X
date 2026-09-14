@@ -15,7 +15,7 @@ const now = () => new Date();
 
 class MemoryIdentityDatabase {
   readonly citizens = new Map([["citizen-a", { id: citizenId, userId: "citizen-a" }], ["citizen-b", { id: secondCitizenId, userId: "citizen-b" }]]);
-  readonly applications = new Map<string, any>([[applicationId, { id: applicationId, citizenId, status: ApplicationStatus.SUBMITTED }], [secondApplicationId, { id: secondApplicationId, citizenId: secondCitizenId, status: ApplicationStatus.SUBMITTED }]]);
+  readonly applications = new Map<string, any>([[applicationId, { id: applicationId, citizenId, status: ApplicationStatus.DRAFT }], [secondApplicationId, { id: secondApplicationId, citizenId: secondCitizenId, status: ApplicationStatus.DRAFT }]]);
   readonly verifications: any[] = [];
   readonly sessions: any[] = [];
   readonly events: any[] = [];
@@ -148,10 +148,10 @@ describe("IdentityVerificationService workflow", () => {
     const { database, service } = makeService();
     await expect(service.completeEkyc("citizen-a", applicationId)).rejects.toMatchObject({ statusCode: 409 });
     await service.verifyAadhaar("citizen-a", applicationId, "XXXX-XXXX-1234");
-    expect(database.applications.get(applicationId).status).toBe(ApplicationStatus.SUBMITTED);
+    expect(database.applications.get(applicationId).status).toBe(ApplicationStatus.DRAFT);
     for (const type of [VerificationType.PAN, VerificationType.FACE, VerificationType.FINGERPRINT]) database.verifications.push(verificationRecord({ applicationId, citizenId, documentId: "document-linked", type, status: VerificationStatus.VERIFIED, providerReference: "DOCUMENT-ONLY", result: {} }));
     await service.verifyAadhaar("citizen-a", applicationId, "XXXX-XXXX-1234");
-    expect(database.applications.get(applicationId).status).toBe(ApplicationStatus.SUBMITTED);
+    expect(database.applications.get(applicationId).status).toBe(ApplicationStatus.DRAFT);
     await service.verifyPan("citizen-a", applicationId, "ABCDE1234F");
     const face = await service.startFace("citizen-a", applicationId); await service.completeFace("citizen-a", face.verificationId);
     const fingerprint = await service.startFingerprint("citizen-a", applicationId); await service.pairFingerprint("citizen-a", fingerprint.sessionId, fingerprint.pairingChallenge);

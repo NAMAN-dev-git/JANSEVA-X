@@ -81,6 +81,12 @@ enum ConsentStatus {
   REVOKED
 }
 
+enum GeneratedDocumentSigningSessionStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
 enum NotificationType {
   APPLICATION_UPDATE
   DOCUMENT_UPDATE
@@ -118,6 +124,7 @@ model User {
   conversations       AIConversation[]
   notifications       Notification[]
   statusChanges       ApplicationStatusHistory[] @relation("StatusChangedBy")
+  generatedDocumentsIssued GeneratedDocument[]    @relation("GeneratedDocumentsIssued")
   refreshTokens       RefreshToken[]
 
   @@index([role])
@@ -142,6 +149,7 @@ model CitizenProfile {
   verifications      Verification[]
   fingerprintSessions FingerprintSession[]
   consents           Consent[]
+  generatedDocumentSigningSessions GeneratedDocumentSigningSession[]
   conversations      AIConversation[]
 
   @@index([createdAt])
@@ -365,6 +373,7 @@ model Consent {
   user            User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   citizen         CitizenProfile @relation(fields: [citizenId], references: [id], onDelete: Restrict)
   application     Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  signingSession  GeneratedDocumentSigningSession?
 
   @@index([applicationId, status])
   @@index([citizenId, recordedAt])
@@ -420,18 +429,49 @@ model ApplicationStatusHistory {
 }
 
 model GeneratedDocument {
-  id              String      @id @default(uuid()) @map("generated_document_id") @db.Uuid
-  applicationId   String      @map("application_id") @db.Uuid
-  documentType    String      @map("document_type") @db.VarChar(150)
-  storageKey      String      @unique @map("storage_key") @db.VarChar(1000)
-  mimeType        String      @map("mime_type") @db.VarChar(150)
-  signatureStatus String      @default("NOT_SIGNED") @map("signature_status") @db.VarChar(50)
-  generatedAt     DateTime    @default(now()) @map("generated_at")
-  signedAt        DateTime?   @map("signed_at")
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id                String      @id @default(uuid()) @map("generated_document_id") @db.Uuid
+  applicationId     String      @map("application_id") @db.Uuid
+  documentType      String      @map("document_type") @db.VarChar(150)
+  storageKey        String      @unique @map("storage_key") @db.VarChar(1000)
+  mimeType          String      @map("mime_type") @db.VarChar(150)
+  signatureStatus   String      @default("NOT_SIGNED") @map("signature_status") @db.VarChar(50)
+  originalFilename  String?     @map("original_filename") @db.VarChar(500)
+  fileSizeBytes     Int?        @map("file_size_bytes")
+  sha256            String?     @db.Char(64)
+  templateVersion   String?     @map("template_version") @db.VarChar(100)
+  generatedByUserId String?     @map("generated_by_user_id") @db.Uuid
+  issuanceKey       String?     @unique @map("issuance_key") @db.Char(64)
+  generatedAt       DateTime    @default(now()) @map("generated_at")
+  signedAt          DateTime?   @map("signed_at")
+  application       Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  generatedBy       User?       @relation("GeneratedDocumentsIssued", fields: [generatedByUserId], references: [id], onDelete: SetNull)
+  signingSessions   GeneratedDocumentSigningSession[]
 
   @@index([applicationId, generatedAt])
   @@map("generated_documents")
+}
+
+// Short-lived demo signing state only. Challenges are retained solely as SHA-256 hashes.
+model GeneratedDocumentSigningSession {
+  id                  String                              @id @default(uuid()) @map("generated_document_signing_session_id") @db.Uuid
+  generatedDocumentId String                              @map("generated_document_id") @db.Uuid
+  citizenId           String                              @map("citizen_id") @db.Uuid
+  consentId           String?                             @unique @map("consent_id") @db.Uuid
+  status              GeneratedDocumentSigningSessionStatus @default(PENDING)
+  providerReference   String                              @map("provider_reference") @db.VarChar(255)
+  signingChallengeHash String                             @map("signing_challenge_hash") @db.Char(64)
+  documentSha256      String                              @map("document_sha256") @db.Char(64)
+  expiresAt           DateTime                            @map("expires_at")
+  completedAt         DateTime?                           @map("completed_at")
+  createdAt           DateTime                            @default(now()) @map("created_at")
+  updatedAt           DateTime                            @updatedAt @map("updated_at")
+  generatedDocument   GeneratedDocument                   @relation(fields: [generatedDocumentId], references: [id], onDelete: Cascade)
+  citizen             CitizenProfile                      @relation(fields: [citizenId], references: [id], onDelete: Restrict)
+  consent             Consent?                            @relation(fields: [consentId], references: [id], onDelete: SetNull)
+
+  @@index([generatedDocumentId, status])
+  @@index([citizenId, expiresAt])
+  @@map("generated_document_signing_sessions")
 }
 
 model Notification {

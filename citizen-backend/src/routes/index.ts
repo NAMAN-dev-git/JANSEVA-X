@@ -4,6 +4,7 @@ import { authRouter } from "./auth.routes";
 import { catalogRouter } from "./catalog.routes";
 import { citizenRouter } from "./citizen.routes";
 import { documentRouter } from "./document.routes";
+import { generatedDocumentRouter } from "./generated-document.routes";
 import { healthRouter } from "./health.routes";
 import { verificationRouter } from "./verification.routes";
 
@@ -15,4 +16,5 @@ apiRouter.use("/citizen", citizenRouter);
 apiRouter.use("/services", catalogRouter);
 apiRouter.use("/applications", applicationRouter);
 apiRouter.use("/documents", documentRouter);
+apiRouter.use(generatedDocumentRouter);
 apiRouter.use(verificationRouter);

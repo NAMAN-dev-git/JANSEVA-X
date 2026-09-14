@@ -129,7 +129,7 @@ class MemoryApplicationRepository implements ApplicationRepository {
 
   async submitDraftApplication(applicationId: string, citizenId: string, userId: string, submittedAt: Date): Promise<ApplicationDetails | null> {
     const application = await this.findCitizenApplication(applicationId, citizenId);
-    if (!application || application.status !== ApplicationStatus.DRAFT) return null;
+    if (!application || application.status !== ApplicationStatus.IDENTITY_VERIFIED) return null;
     application.status = ApplicationStatus.SUBMITTED;
     application.submittedAt = submittedAt;
     application.updatedAt = submittedAt;
@@ -210,24 +210,26 @@ describe("ApplicationService", () => {
     expect(history.map((entry) => entry.status)).toEqual([ApplicationStatus.DRAFT]);
   });
 
-  it("submits a draft and records the only implemented transition", async () => {
+  it("submits an identity-verified application and records the transition", async () => {
     const application = await createForCitizenA();
+    application.status = ApplicationStatus.IDENTITY_VERIFIED;
+    application.statusHistory.push({ id: randomUUID(), applicationId: application.id, status: ApplicationStatus.IDENTITY_VERIFIED, note: "Identity verification completed", changedByUserId: "citizen-a", createdAt: new Date() });
     const submitted = await service.submitDraft("citizen-a", application.id);
 
     expect(submitted).toMatchObject({ status: ApplicationStatus.SUBMITTED });
     expect(submitted.submittedAt).not.toBeNull();
-    expect(submitted.statusHistory.map((entry) => entry.status)).toEqual([ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED]);
+    expect(submitted.statusHistory.map((entry) => entry.status)).toEqual([ApplicationStatus.DRAFT, ApplicationStatus.IDENTITY_VERIFIED, ApplicationStatus.SUBMITTED]);
     await expect(service.updateDraft("citizen-a", application.id, { rejected: true })).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("rejects invalid citizen status transitions", () => {
-    expect(() => assertCitizenStatusTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).not.toThrow();
-    expect(() => assertCitizenStatusTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.SUBMITTED)).toThrow(AppError);
+    expect(() => assertCitizenStatusTransition(ApplicationStatus.IDENTITY_VERIFIED, ApplicationStatus.SUBMITTED)).not.toThrow();
+    expect(() => assertCitizenStatusTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).toThrow(AppError);
   });
 
-  it("allows only the verification-service transition to IDENTITY_VERIFIED", () => {
-    expect(() => assertIdentityVerificationTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.IDENTITY_VERIFIED)).not.toThrow();
-    expect(() => assertIdentityVerificationTransition(ApplicationStatus.DRAFT, ApplicationStatus.IDENTITY_VERIFIED)).toThrow(AppError);
+  it("allows only the verification-service transition from DRAFT to IDENTITY_VERIFIED", () => {
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.DRAFT, ApplicationStatus.IDENTITY_VERIFIED)).not.toThrow();
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.IDENTITY_VERIFIED)).toThrow(AppError);
   });
 
   it("prevents one citizen from reading, updating, or submitting another citizen application", async () => {

@@ -66,5 +66,17 @@ export function presentApplicationDetails(application: ApplicationDetails) {
       rejectionReason: applicationDocument.document.rejectionReason,
       uploadedAt: applicationDocument.document.uploadedAt,
     })),
+    generatedDocuments: application.generatedDocuments.map((document) => ({
+      generatedDocumentId: document.id,
+      documentType: document.documentType,
+      originalFilename: document.originalFilename,
+      mimeType: document.mimeType,
+      fileSizeBytes: document.fileSizeBytes,
+      sha256: document.sha256,
+      templateVersion: document.templateVersion,
+      signatureStatus: document.signatureStatus,
+      generatedAt: document.generatedAt,
+      signedAt: document.signedAt,
+    })),
   };
 }

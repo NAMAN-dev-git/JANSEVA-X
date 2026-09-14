@@ -186,7 +186,7 @@ export class IdentityVerificationService {
 
   private async eligibleApplication(userId: string, applicationId: string) {
     const owned = await this.ownedApplication(userId, applicationId);
-    if (owned.application.status !== ApplicationStatus.SUBMITTED && owned.application.status !== ApplicationStatus.IDENTITY_VERIFIED) throw new AppError("Identity verification is available only for submitted applications", 409);
+    if (owned.application.status !== ApplicationStatus.DRAFT && owned.application.status !== ApplicationStatus.IDENTITY_VERIFIED) throw new AppError("Identity verification is available only for draft applications", 409);
     return owned;
   }
 
@@ -218,8 +218,8 @@ export class IdentityVerificationService {
   private async maybeMarkIdentityVerified(applicationId: string, userId: string) {
     const completed = await this.database.verification.findMany({ where: { applicationId, documentId: null, type: { in: CORE_TYPES }, status: VerificationStatus.VERIFIED }, select: { type: true } });
     if (new Set(completed.map((verification) => verification.type)).size !== CORE_TYPES.length) return;
-    assertIdentityVerificationTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.IDENTITY_VERIFIED);
-    const transitioned = await this.database.application.updateMany({ where: { id: applicationId, status: ApplicationStatus.SUBMITTED }, data: { status: ApplicationStatus.IDENTITY_VERIFIED } });
+    assertIdentityVerificationTransition(ApplicationStatus.DRAFT, ApplicationStatus.IDENTITY_VERIFIED);
+    const transitioned = await this.database.application.updateMany({ where: { id: applicationId, status: ApplicationStatus.DRAFT }, data: { status: ApplicationStatus.IDENTITY_VERIFIED } });
     if (transitioned.count === 1) await this.database.applicationStatusHistory.create({ data: { applicationId, status: ApplicationStatus.IDENTITY_VERIFIED, note: "Core identity verification completed (DEMO only; no government or biometric provider contacted)", changedByUserId: userId } });
   }
 }
