@@ -8,6 +8,7 @@ export type ApplicationDetails = Prisma.ApplicationGetPayload<{
     service: { include: { requirements: true } };
     statusHistory: true;
     applicationDocuments: { include: { document: true } };
+    mockIssuedDocumentAttachments: { include: { mockIssuedDocument: true } };
     generatedDocuments: true;
   };
 }>;
@@ -91,6 +92,7 @@ export class PrismaApplicationRepository implements ApplicationRepository {
         service: { include: { requirements: { orderBy: { sortOrder: "asc" } } } },
         statusHistory: { orderBy: { createdAt: "asc" } },
         applicationDocuments: { include: { document: true }, orderBy: { createdAt: "asc" } },
+        mockIssuedDocumentAttachments: { include: { mockIssuedDocument: true }, orderBy: { attachedAt: "asc" } },
         generatedDocuments: { orderBy: { generatedAt: "asc" } },
       },
     });
@@ -122,6 +124,7 @@ export class PrismaApplicationRepository implements ApplicationRepository {
           service: { include: { requirements: { orderBy: { sortOrder: "asc" } } } },
           statusHistory: { orderBy: { createdAt: "asc" } },
           applicationDocuments: { include: { document: true }, orderBy: { createdAt: "asc" } },
+          mockIssuedDocumentAttachments: { include: { mockIssuedDocument: true }, orderBy: { attachedAt: "asc" } },
           generatedDocuments: { orderBy: { generatedAt: "asc" } },
         },
       });

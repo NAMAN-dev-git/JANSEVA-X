@@ -6,7 +6,7 @@ import { app } from "../src/app";
 import { env } from "../src/config/env";
 import { errorHandler } from "../src/middleware/error-handler";
 import { requireAuth, requireRole } from "../src/middleware/require-auth";
-import { loginRequestSchema, registerRequestSchema } from "../src/validators/auth.validators";
+import { demoLoginRequestSchema, loginRequestSchema, registerRequestSchema } from "../src/validators/auth.validators";
 
 describe("authentication request validation", () => {
   it("rejects an invalid email and weak password", () => {
@@ -19,6 +19,12 @@ describe("authentication request validation", () => {
 
   it("does not accept an empty login password", () => {
     expect(loginRequestSchema.safeParse({ body: { email: "citizen@jansevax.test", password: "" }, params: {}, query: {} }).success).toBe(false);
+  });
+
+  it("accepts only a ten-digit demo mobile and six-digit demo OTP", () => {
+    expect(demoLoginRequestSchema.safeParse({ body: { mobile: "9000000001", otp: "123456" }, params: {}, query: {} }).success).toBe(true);
+    expect(demoLoginRequestSchema.safeParse({ body: { mobile: "9000000001", otp: "12345" }, params: {}, query: {} }).success).toBe(false);
+    expect(demoLoginRequestSchema.safeParse({ body: { mobile: "900000001", otp: "123456" }, params: {}, query: {} }).success).toBe(false);
   });
 });
 

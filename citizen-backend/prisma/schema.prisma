@@ -145,6 +145,7 @@ model CitizenProfile {
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
   user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  demoCitizenProfile DemoCitizenProfile?
   applications       Application[]
   verifications      Verification[]
   fingerprintSessions FingerprintSession[]
@@ -154,6 +155,48 @@ model CitizenProfile {
 
   @@index([createdAt])
   @@map("citizen_profiles")
+}
+
+// Demo-only identity registry. The unique mobile number, not the display name,
+// is used to locate a profile during the mock OTP login flow.
+model DemoCitizenProfile {
+  id               String                @id @default(uuid()) @map("demo_citizen_profile_id") @db.Uuid
+  profileCode      String                @unique @map("profile_code") @db.VarChar(50)
+  normalizedMobile String                @unique @map("normalized_mobile") @db.VarChar(15)
+  mockOtpHash      String                @map("mock_otp_hash")
+  citizenProfileId String                @unique @map("citizen_profile_id") @db.Uuid
+  isDemo           Boolean               @default(true) @map("is_demo")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  citizenProfile   CitizenProfile        @relation(fields: [citizenProfileId], references: [id], onDelete: Restrict)
+  issuedDocuments  MockIssuedDocument[]
+
+  @@index([createdAt])
+  @@map("demo_citizen_profiles")
+}
+
+// Separate from uploaded Documents and application completion GeneratedDocuments.
+// All values are synthetic fixtures for the JANSEVA-X hackathon demo.
+model MockIssuedDocument {
+  id                   String             @id @default(uuid()) @map("mock_issued_document_id") @db.Uuid
+  documentCode         String             @unique @map("document_code") @db.VarChar(100)
+  demoCitizenProfileId String             @map("demo_citizen_profile_id") @db.Uuid
+  documentType         String             @map("document_type") @db.VarChar(150)
+  displayName          String             @map("display_name") @db.VarChar(200)
+  issuer               String             @db.VarChar(200)
+  issueDate            DateTime           @map("issue_date") @db.Date
+  expiryDate           DateTime?          @map("expiry_date") @db.Date
+  status               String             @default("AVAILABLE") @db.VarChar(50)
+  structuredFields     Json?              @map("structured_fields")
+  isDemo               Boolean            @default(true) @map("is_demo")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  demoCitizenProfile   DemoCitizenProfile @relation(fields: [demoCitizenProfileId], references: [id], onDelete: Cascade)
+  applicationMockIssuedDocuments ApplicationMockIssuedDocument[]
+
+  @@index([demoCitizenProfileId, status])
+  @@index([documentType])
+  @@map("mock_issued_documents")
 }
 
 model RefreshToken {
@@ -238,6 +281,7 @@ model Application {
   service               GovernmentService          @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   assignedOfficer       Officer?                   @relation(fields: [assignedOfficerId], references: [id], onDelete: SetNull)
   applicationDocuments  ApplicationDocument[]
+  mockIssuedDocumentAttachments ApplicationMockIssuedDocument[]
   verifications         Verification[]
   fingerprintSessions   FingerprintSession[]
   consents              Consent[]
@@ -291,6 +335,22 @@ model ApplicationDocument {
   @@index([documentId])
   @@index([applicationId])
   @@map("application_documents")
+}
+
+// A demo-only reuse link. This intentionally remains distinct from Document
+// uploads: mock issued documents have no citizen-uploaded file or storage key.
+model ApplicationMockIssuedDocument {
+  id                   String             @id @default(uuid()) @map("application_mock_issued_document_id") @db.Uuid
+  applicationId        String             @map("application_id") @db.Uuid
+  mockIssuedDocumentId String             @map("mock_issued_document_id") @db.Uuid
+  requirementId        String             @map("requirement_id") @db.Uuid
+  attachedAt           DateTime           @default(now()) @map("attached_at")
+  application          Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  mockIssuedDocument   MockIssuedDocument @relation(fields: [mockIssuedDocumentId], references: [id], onDelete: Restrict)
+
+  @@unique([applicationId, mockIssuedDocumentId, requirementId])
+  @@index([applicationId])
+  @@map("application_mock_issued_documents")
 }
 
 model Verification {

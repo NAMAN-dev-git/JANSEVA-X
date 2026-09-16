@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createApplication, getApplication, getApplicationHistory, listApplications, submitApplication, updateApplication } from "../controllers/application.controller";
 import { listApplicationDocuments, uploadApplicationDocument } from "../controllers/document.controller";
+import { attachMockIssuedDocument } from "../controllers/mock-issued-document-attachment.controller";
 import { completeGeneratedDocumentWorkflow, listGeneratedDocuments } from "../controllers/generated-document.controller";
 import { completeEkyc, startFace, startFingerprint, verificationSummary, verifyAadhaar, verifyPan } from "../controllers/identity-verification.controller";
 import { documentUpload } from "../middleware/document-upload";
@@ -15,6 +16,7 @@ import {
   updateApplicationRequestSchema,
 } from "../validators/application.validators";
 import { applicationDocumentUploadParamsSchema } from "../validators/document.validators";
+import { attachMockIssuedDocumentRequestSchema } from "../validators/mock-issued-document-attachment.validators";
 import { applicationCompletionSchema, generatedDocumentListSchema } from "../validators/generated-document.validators";
 import { aadhaarVerificationSchema, applicationVerificationEmptySchema, panVerificationSchema } from "../validators/verification.validators";
 
@@ -25,6 +27,7 @@ applicationRouter.post("/", validate(createApplicationRequestSchema), asyncHandl
 applicationRouter.get("/", validate(listApplicationsRequestSchema), asyncHandler(listApplications));
 applicationRouter.post("/:applicationId/documents", validate(applicationDocumentUploadParamsSchema), documentUpload.single("file"), asyncHandler(uploadApplicationDocument));
 applicationRouter.get("/:applicationId/documents", validate(applicationIdParamsSchema), asyncHandler(listApplicationDocuments));
+applicationRouter.post("/:applicationId/mock-issued-document-attachments", validate(attachMockIssuedDocumentRequestSchema), asyncHandler(attachMockIssuedDocument));
 applicationRouter.get("/:applicationId/generated-documents", validate(generatedDocumentListSchema), asyncHandler(listGeneratedDocuments));
 applicationRouter.post("/:applicationId/verifications/aadhaar", validate(aadhaarVerificationSchema), asyncHandler(verifyAadhaar));
 applicationRouter.post("/:applicationId/verifications/pan", validate(panVerificationSchema), asyncHandler(verifyPan));

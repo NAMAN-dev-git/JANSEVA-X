@@ -1,5 +1,6 @@
-import { PrismaClient, UserRole } from "@prisma/client";
+import { Prisma, PrismaClient, UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { DEMO_OTP, demoCitizenSeeds } from "./demo-citizen.seed-data";
 
 const prisma = new PrismaClient();
 
@@ -61,6 +62,70 @@ async function main() {
     update: { fullName: "Demo Citizen", phone: "+910000000000", address: "Synthetic DEMO/PROTOTYPE address only", city: "Demo City", state: "Demo State", pincode: "000000" },
     create: { userId: citizenUser.id, fullName: "Demo Citizen", phone: "+910000000000", address: "Synthetic DEMO/PROTOTYPE address only", city: "Demo City", state: "Demo State", pincode: "000000" },
   });
+
+  // These are deterministic, explicitly fictional accounts for the hackathon
+  // demo. A mobile number and a hashed demo-only OTP map to the linked profile;
+  // no matching is performed using a display name.
+  const mockOtpHash = await bcrypt.hash(DEMO_OTP, 12);
+  for (const demo of demoCitizenSeeds) {
+    const user = await prisma.user.upsert({
+      where: { email: demo.email },
+      update: { displayName: demo.fullName, passwordHash, role: UserRole.CITIZEN, isActive: true },
+      create: { email: demo.email, displayName: demo.fullName, passwordHash, role: UserRole.CITIZEN },
+    });
+    const citizenProfile = await prisma.citizenProfile.upsert({
+      where: { userId: user.id },
+      update: {
+        fullName: demo.fullName,
+        phone: demo.mobile,
+        dateOfBirth: new Date(`${demo.dateOfBirth}T00:00:00.000Z`),
+        address: demo.address,
+        city: demo.city,
+        state: demo.state,
+        pincode: demo.pincode,
+      },
+      create: {
+        userId: user.id,
+        fullName: demo.fullName,
+        phone: demo.mobile,
+        dateOfBirth: new Date(`${demo.dateOfBirth}T00:00:00.000Z`),
+        address: demo.address,
+        city: demo.city,
+        state: demo.state,
+        pincode: demo.pincode,
+      },
+    });
+    const demoProfile = await prisma.demoCitizenProfile.upsert({
+      where: { profileCode: demo.profileCode },
+      update: {
+        normalizedMobile: demo.mobile,
+        mockOtpHash,
+        citizenProfileId: citizenProfile.id,
+        isDemo: true,
+      },
+      create: {
+        profileCode: demo.profileCode,
+        normalizedMobile: demo.mobile,
+        mockOtpHash,
+        citizenProfileId: citizenProfile.id,
+        isDemo: true,
+      },
+    });
+    for (const [documentCode, documentType, displayName, issuer, issueDate, expiryDate, structuredFields] of demo.documents) {
+      const data = {
+        demoCitizenProfileId: demoProfile.id,
+        documentType,
+        displayName,
+        issuer,
+        issueDate: new Date(`${issueDate}T00:00:00.000Z`),
+        expiryDate: expiryDate ? new Date(`${expiryDate}T00:00:00.000Z`) : null,
+        status: "AVAILABLE",
+        structuredFields: structuredFields as unknown as Prisma.InputJsonValue,
+        isDemo: true,
+      };
+      await prisma.mockIssuedDocument.upsert({ where: { documentCode }, update: data, create: { documentCode, ...data } });
+    }
+  }
 
   const officerUser = await prisma.user.upsert({
     where: { email: "demo.officer@jansevax.test" },
