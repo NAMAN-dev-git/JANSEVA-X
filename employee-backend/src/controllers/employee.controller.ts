@@ -1,0 +1,6 @@
+import type { Request, Response } from "express";
+import { EmployeeService } from "../services/employee.service";
+import { presentRegistryItem } from "../utils/response-presenters";
+const service = new EmployeeService();
+export async function me(request: Request, response: Response): Promise<void> { const profile = await service.profile(request.auth!.userId, request.auth!.role); response.json({ success: true, data: { user: { userId: profile.user.id, email: profile.user.email, displayName: profile.user.displayName, role: profile.user.role }, officer: profile.officer ? { officerId: profile.officer.id, employeeIdentifier: profile.officer.employeeIdentifier, department: profile.officer.department, designation: profile.officer.designation } : null } }); }
+export async function dashboard(request: Request, response: Response): Promise<void> { const result = await service.dashboard(request.auth!.userId, request.auth!.role as "OFFICER" | "ADMIN"); response.json({ success: true, data: { role: request.auth!.role, counts: { total: result.total, claimable: result.claimableCount, byApplicationStatus: result.applicationStatusCounts, byReviewStatus: result.reviewStatusCounts }, recentApplications: result.recentApplications.map(presentRegistryItem) } }); }

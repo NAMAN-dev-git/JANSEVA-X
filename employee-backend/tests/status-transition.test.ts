@@ -1,0 +1,4 @@
+import { ApplicationStatus } from "@prisma/client";
+import { describe, expect, it } from "vitest";
+import { assertEmployeeTransition } from "../src/services/application-status.service";
+describe("employee status transitions", () => { it("permits only the approved workflow", () => { expect(() => assertEmployeeTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW)).not.toThrow(); expect(() => assertEmployeeTransition(ApplicationStatus.UNDER_REVIEW, ApplicationStatus.APPROVED)).not.toThrow(); expect(() => assertEmployeeTransition(ApplicationStatus.APPROVED, ApplicationStatus.SIGNED)).not.toThrow(); expect(() => assertEmployeeTransition(ApplicationStatus.SIGNED, ApplicationStatus.COMPLETED)).not.toThrow(); expect(() => assertEmployeeTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.APPROVED)).toThrow(); expect(() => assertEmployeeTransition(ApplicationStatus.REJECTED, ApplicationStatus.COMPLETED)).toThrow(); }); });

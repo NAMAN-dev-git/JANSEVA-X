@@ -137,3 +137,58 @@ Batch 4 adds the `DOCUMENT` verification type. It is a prototype automated docum
 | GET | `/api/documents/:documentId/verification` | Citizen bearer token | stored strict analysis or `null` |
 
 Upload accepts one multipart `file` only: PDF, JPG/JPEG, or PNG, with matching MIME type/extension and a 10 MB maximum. Implementations must generate storage names and must not expose storage paths. Analysis results retain only confidently extracted values; unreliable values are `null`. The current local deterministic analyzer reports signature/seal detection as `NOT_AVAILABLE`; it makes no legal or authenticity claims. OCR uses Tesseract.js for images and embedded PDF-text extraction where present. Scanned-PDF rasterization and any external LLM provider are deliberately outside this batch.
+
+## Employee Backend API (Batch 1)
+
+The Employee Backend uses the existing shared database records and JWT claims (`userId`, `role`). It does not duplicate the `User`, `Officer`, `Application`, `Document`, or history models. Protected Employee Backend routes require `OFFICER` or `ADMIN`; a `CITIZEN` token is rejected. `OFFICER` access is limited to assigned applications, except for claiming an unassigned submitted application. `ADMIN` may access the full queue and assign or release applications.
+
+| Method | Path | Authorization | Request | Success response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/health` | None | None | Employee service health response |
+| GET | `/api/employee/me` | OFFICER or ADMIN bearer | None | Safe user and officer profile |
+| GET | `/api/employee/applications` | OFFICER or ADMIN bearer | `page`, `limit`; optional `status`, `reviewStatus`, `serviceId` | Authorized paginated work queue |
+| GET | `/api/employee/applications/:applicationId` | Assigned OFFICER or ADMIN bearer | None | Safe review detail, document metadata, and history |
+| GET | `/api/employee/applications/:applicationId/history` | Assigned OFFICER or ADMIN bearer | None | Authorized chronological history |
+| POST | `/api/employee/applications/:applicationId/claim` | OFFICER bearer | Empty body | Atomically claimed application |
+| POST | `/api/employee/applications/:applicationId/release` | Assigned OFFICER or ADMIN bearer | Empty body | Released application summary |
+| PATCH | `/api/employee/applications/:applicationId/assignment` | ADMIN bearer | `officerId` UUID or `null` | Assigned or released application |
+| POST | `/api/employee/applications/:applicationId/review/start` | Assigned OFFICER or ADMIN bearer | Empty body | Application moved into review |
+| POST | `/api/employee/applications/:applicationId/decision` | Assigned OFFICER or ADMIN bearer | `status`, `note` | Backend-confirmed decision |
+| PATCH | `/api/employee/documents/:documentId/review` | Assigned OFFICER or ADMIN bearer | `action`, `note` | Safe document and verification metadata |
+
+Only these application transitions are permitted: `SUBMITTED -> UNDER_REVIEW`; `UNDER_REVIEW -> CORRECTION_REQUIRED | APPROVED | REJECTED`; `APPROVED -> SIGNED`; and `SIGNED -> COMPLETED`. Employee decisions require a bounded human note. AI/OCR/document analysis remains advisory and never independently approves or rejects an application.
+
+Claims use a conditional update to prevent concurrent claims. Assignment, release, review-start, and decision operations use transactions for related writes and append `ApplicationStatusHistory` with the acting user where applicable. Invalid state/assignment conflicts return `409`; invalid bodies `400`; authentication/authorization failures `401`/`403`; inaccessible records `404`.
+
+Employee responses use `{ "success": true, "data": ... }` and exclude password hashes, refresh-token hashes, document storage keys, document bytes, raw OCR text, and unnecessary citizen profile fields. Document review returns safe metadata and verification state only.
+
+## Employee Backend API (Batch 2)
+
+Batch 2 adds role-scoped Employee dashboard and application-registry reads. It uses the existing `Application`, `Officer`, `ApplicationStatus`, `OfficerReviewStatus`, and `ApplicationStatusHistory` records; no database schema or migration change is required.
+
+| Method | Path | Authorization | Request | Success response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/employee/dashboard` | OFFICER or ADMIN bearer | None | Authorized counts and up to five recent application previews |
+| GET | `/api/employee/applications` | OFFICER or ADMIN bearer | Existing pagination/status/review/service filters; optional registry filters below | Authorized paginated registry |
+| GET | `/api/employee/applications/completed` | OFFICER or ADMIN bearer | `page`, `limit`; optional `serviceId`, `search`, `sortBy`, `sortOrder` | Authorized paginated `COMPLETED` registry |
+
+Dashboard responses contain the authenticated role and `counts`: total visible applications, the number of claimable unassigned submitted applications, zero-filled counts for every fixed `ApplicationStatus`, and zero-filled counts for every fixed `OfficerReviewStatus`. `recentApplications` contains at most five safe registry previews ordered by latest update. Counts and previews obey the same Employee visibility boundary as the registry.
+
+The application registry keeps `page` (default `1`) and `limit` (default `10`, maximum `50`) plus its Batch 1 exact `status`, `reviewStatus`, and `serviceId` filters. Batch 2 additionally accepts a bounded `search` term for application number or authorized citizen full name; `assignedOfficerId` as an officer UUID or literal `unassigned`; inclusive ISO-8601 UTC `submittedFrom` and `submittedTo` values; and `sortBy` (`submittedAt`, `createdAt`, or `updatedAt`) with `sortOrder` (`asc` or `desc`). The submitted range must be chronologically ordered. An OFFICER may filter only their own assignment or `unassigned`; ADMIN may filter any officer assignment. Registry previews include only minimal citizen context (`citizenId`, `fullName`, `city`, and `state`) alongside safe application, service, assignment, and timestamp fields.
+
+The completed endpoint fixes its status server-side to the existing `COMPLETED` value and does not accept a client-selected status. It supports bounded pagination, optional service/search filters, and `createdAt` or `updatedAt` ordering. Each completed item includes a nullable `completedAt` derived from the immutable `COMPLETED` status-history entry; it does not add a new database field.
+
+## Employee Backend API (Batch 3)
+
+Batch 3 adds a detailed Employee review read model and a human identity-verification review action using only existing shared records. No application status transition is performed by identity review, and AI/OCR diagnostics remain advisory.
+
+| Method | Path | Authorization | Request | Success response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/employee/applications/:applicationId/review` | Assigned OFFICER or ADMIN bearer | UUID path parameter | Safe detailed application-review payload |
+| PATCH | `/api/employee/applications/:applicationId/identity-verifications/:verificationId/review` | Assigned OFFICER or ADMIN bearer | `action`, bounded `note` | Safe updated identity-verification summary |
+
+The detailed review payload contains the authorized minimal applicant context, application form data already available to Employee review, current application/review status, correction reason, service and requirements, assignment officer and assignment/review timestamps, safe document metadata and manual-review state, non-document identity-verification summaries, and chronological status history. It excludes password and refresh-token data, storage keys, document bytes, document hashes, provider references, verification result payloads, and raw OCR.
+
+Identity review accepts only `VERIFY`, `REJECT`, or `REQUEST_MANUAL_REVIEW`. It operates only on an existing `AADHAAR`, `PAN`, `FACE`, `FINGERPRINT`, or `E_KYC` verification belonging to the specified application; `DOCUMENT` verifications are excluded. The action updates the existing verification status, failure reason, and verification timestamp as applicable, and appends an audit history entry using the current application status. It does not create verification records, change application status, or independently approve/reject an application.
+
+When persisted document analysis is structurally valid, review responses expose only an allowlisted advisory diagnostic: detected document type, confidence, readability, missing fields, detected issues, signature/seal availability, and recommendation. Extracted fields such as document number, address, phone, and name, along with OCR text and arbitrary stored analysis data, are never returned. Diagnostics are explicitly `DEMO/PROTOTYPE` and require authorized human review; they never determine an application outcome. Malformed or absent analysis produces no diagnostics.
