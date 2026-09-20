@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import type { CitizenProfile, User } from "@prisma/client";
 import { env } from "../config/env";
+import { type DemoProfileRepository, PrismaDemoProfileRepository } from "../repositories/demo-profile.repository";
 import {
   type AuthRepository,
   type CitizenProfileUpdateInput,
@@ -32,7 +33,10 @@ export interface PublicUser {
 }
 
 export class AuthService {
-  constructor(private readonly repository: AuthRepository = new PrismaAuthRepository()) {}
+  constructor(
+    private readonly repository: AuthRepository = new PrismaAuthRepository(),
+    private readonly demoProfileRepository: DemoProfileRepository = new PrismaDemoProfileRepository(),
+  ) {}
 
   async register(input: RegistrationInput): Promise<{ user: PublicUser; tokens: TokenPair }> {
     const email = normalizeEmail(input.email);
@@ -41,8 +45,9 @@ export class AuthService {
       throw new AppError("An account with this email already exists", 409);
     }
 
-    const passwordHash = await hashPassword(input.password);
-    const user = await this.repository.createCitizenUser({ ...input, email, passwordHash });
+    const { password, ...registration } = input;
+    const passwordHash = await hashPassword(password);
+    const user = await this.repository.createCitizenUser({ ...registration, email, passwordHash });
     return { user: toPublicUser(user), tokens: await this.createTokenPair(user) };
   }
 
@@ -59,6 +64,31 @@ export class AuthService {
 
     await this.repository.updateLastLogin(user.id);
     return { user: toPublicUser(user), tokens: await this.createTokenPair(user) };
+  }
+
+  async loginDemo(normalizedMobile: string, otp: string): Promise<{ user: PublicUser; tokens: TokenPair }> {
+    const demoProfile = await this.demoProfileRepository.findForDemoLogin(normalizedMobile);
+    const invalidDemoCredentials = new AppError("Invalid demo mobile number or OTP", 401);
+    if (!demoProfile || !(await verifyPassword(otp, demoProfile.mockOtpHash))) {
+      throw invalidDemoCredentials;
+    }
+    const { user, ...citizenProfile } = demoProfile.citizenProfile;
+    if (!user.isActive || user.role !== "CITIZEN") {
+      throw new AppError("This demo citizen account is inactive", 403);
+    }
+    await this.repository.updateLastLogin(user.id);
+    return {
+      user: {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        citizenProfile,
+      },
+      tokens: await this.createTokenPair(user),
+    };
   }
 
   async refresh(rawRefreshToken: string): Promise<TokenPair> {

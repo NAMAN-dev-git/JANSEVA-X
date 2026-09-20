@@ -7,7 +7,6 @@ import {
   PrismaApplicationRepository,
 } from "../repositories/application.repository";
 import { AppError } from "../utils/app-error";
-import { assertCitizenStatusTransition } from "./application-status.service";
 
 export interface CreateApplicationInput {
   serviceId: string;
@@ -69,17 +68,6 @@ export class ApplicationService {
     const updated = await this.repository.updateDraftApplication(applicationId, citizen.id, applicationData);
     if (!updated) throw new AppError("Application draft could not be updated", 409);
     return updated;
-  }
-
-  async submitDraft(userId: string, applicationId: string): Promise<ApplicationDetails> {
-    const citizen = await this.getCitizen(userId);
-    const application = await this.getOwnedApplication(citizen.id, applicationId);
-    if (!application.service.isActive) throw new AppError("Government service is not active", 409);
-
-    assertCitizenStatusTransition(application.status, ApplicationStatus.SUBMITTED);
-    const submitted = await this.repository.submitDraftApplication(applicationId, citizen.id, userId, new Date());
-    if (!submitted) throw new AppError("Application could not be submitted", 409);
-    return submitted;
   }
 
   async getHistory(userId: string, applicationId: string) {

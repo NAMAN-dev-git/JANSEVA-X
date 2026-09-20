@@ -13,6 +13,10 @@ const phone = z.string().trim().min(7).max(30).transform((value) => value.replac
   (value) => /^\+?[0-9]{7,15}$/.test(value),
   "Phone must contain 7 to 15 digits, optionally prefixed by +",
 );
+const demoMobile = z.string().trim().min(7).max(30).transform((value) => value.replace(/[^0-9]/g, "")).refine(
+  (value) => /^\d{10}$/.test(value),
+  "Demo mobile number must contain exactly 10 digits",
+);
 const dateOfBirth = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must use YYYY-MM-DD").refine(
   (value) => !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`)),
   "Date of birth must be a valid date",
@@ -40,6 +44,12 @@ export const loginRequestSchema = z.object({
   query: z.object({}),
 });
 
+export const demoLoginRequestSchema = z.object({
+  body: z.object({ mobile: demoMobile, otp: z.string().trim().regex(/^\d{6}$/, "Demo OTP must contain exactly 6 digits") }).strict(),
+  params: z.object({}),
+  query: z.object({}),
+});
+
 export const refreshRequestSchema = z.object({
   body: z.object({ refreshToken: z.string().min(32).max(500) }).strict(),
   params: z.object({}),
@@ -54,5 +64,6 @@ export const updateProfileRequestSchema = z.object({
 
 export type RegisterRequestBody = z.infer<typeof registerRequestSchema>["body"];
 export type LoginRequestBody = z.infer<typeof loginRequestSchema>["body"];
+export type DemoLoginRequestBody = z.infer<typeof demoLoginRequestSchema>["body"];
 export type RefreshRequestBody = z.infer<typeof refreshRequestSchema>["body"];
 export type UpdateProfileRequestBody = z.infer<typeof updateProfileRequestSchema>["body"];

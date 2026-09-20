@@ -1,124 +1,71 @@
 # JANSEVA-X Citizen Backend
 
-JANSEVA-X is a prototype government document-services platform. Batch 4 adds citizen document upload, local storage, OCR, deterministic document analysis, and prototype document-consistency verification to the Batch 3 Citizen Backend.
-
-## Implemented scope
-
-- Shared Prisma/PostgreSQL schema for the future Citizen and Employee Backends.
-- Citizen registration, login, refresh-token rotation, logout, and authenticated identity lookup.
-- Authenticated citizen profile read and self-service update.
-- Public active-service and service-requirement catalogue APIs.
-- Citizen-owned draft creation, listing, details, data update, status history, and `DRAFT` to `SUBMITTED` submission.
-- Citizen-owned PDF/JPG/JPEG/PNG uploads (10 MB maximum), SHA-256 metadata, safe local storage, OCR, structured extraction, explainable mismatch detection, and persisted prototype document checks.
-- JWT bearer authentication, hashed password storage, hashed refresh-token storage, Helmet, CORS, rate limiting, Zod validation, request IDs, request logging, and centralized error handling.
-- `GET /api/health`.
-
-## Not implemented
-
-Live Aadhaar/PAN/biometric/e-KYC verification, consent, officer review, correction handling, approval/rejection, e-signing, generated documents, and all frontend work remain outside Batch 4. OCR and analysis do not verify document authenticity or government records.
-
-## Setup
-
-1. Install Node.js 20+ and PostgreSQL 14+.
-2. Copy `.env.example` to `.env`. Set a valid PostgreSQL `DATABASE_URL` and a unique `JWT_SECRET` of at least 32 characters.
-3. Create the database named in `DATABASE_URL`.
-4. Install packages, generate Prisma, migrate, and seed:
-
-```bash
-npm install
-npm run prisma:generate
-npm run prisma:migrate -- --name init
-npm run prisma:seed
-```
-
-For an existing local Batch 1 database, create and apply a new migration after pulling this change. The profile's API field is now `phone` (mapped to the existing `mobile_number` column), while `address` is normalized to text and `city`, `state`, and `pincode` were added.
-
-## Environment
-
-Required configuration is documented in `.env.example`:
-
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `JWT_EXPIRES_IN`
-- `REFRESH_TOKEN_EXPIRES_IN_DAYS`
-- `CORS_ORIGIN`
-- `PORT`
-- `NODE_ENV`
-
-## Commands
-
-```bash
-npm run dev
-npm run build
-npm start
-npm test
-npm run test:types
-npm run prisma:validate
-npm run prisma:generate
-npm run prisma:migrate
-npm run prisma:seed
-```
-
-## API overview
-
-| Method | Path | Authentication |
-| --- | --- | --- |
-| GET | `/api/health` | None |
-| POST | `/api/auth/register` | None |
-| POST | `/api/auth/login` | None |
-| POST | `/api/auth/refresh` | None, refresh token body |
-| POST | `/api/auth/logout` | None, refresh token body |
-| GET | `/api/auth/me` | Bearer access token |
-| GET | `/api/citizen/profile` | Citizen Bearer access token |
-| PATCH | `/api/citizen/profile` | Citizen Bearer access token |
-| GET | `/api/services` | None |
-| GET | `/api/services/:serviceId` | None |
-| GET | `/api/services/:serviceId/requirements` | None |
-| POST | `/api/applications` | Citizen Bearer access token |
-| GET | `/api/applications` | Citizen Bearer access token |
-| GET | `/api/applications/:applicationId` | Citizen Bearer access token |
-| PATCH | `/api/applications/:applicationId` | Citizen Bearer access token |
-| POST | `/api/applications/:applicationId/submit` | Citizen Bearer access token |
-| GET | `/api/applications/:applicationId/history` | Citizen Bearer access token |
-| POST | `/api/applications/:applicationId/documents` | Citizen Bearer access token |
-| GET | `/api/applications/:applicationId/documents` | Citizen Bearer access token |
-| GET | `/api/documents/:documentId` | Citizen Bearer access token |
-| DELETE | `/api/documents/:documentId` | Citizen Bearer access token |
-| POST | `/api/documents/:documentId/analyze` | Citizen Bearer access token |
-| GET | `/api/documents/:documentId/verification` | Citizen Bearer access token |
-
-See `API_DOCUMENTATION.md` and `../shared/API_CONTRACT.md` for request and response contracts.
-
-## Current citizen flow
-
-Login -> Browse Government Services -> Select Service -> Create Draft Application -> Update Draft -> Submit Application -> Track Status and History.
-
-Application ownership is derived from the authenticated JWT and is never client-selectable. The only implemented citizen status transition is `DRAFT` to `SUBMITTED`. Submission currently requires only an active service; Batch 4 document analysis does not alter application status or establish identity verification.
-
-## Batch 4 document processing
-
-Upload one multipart field named `file` to an owned application, with optional `expectedDocumentType` (`AADHAAR`, `PAN`, `TRADE_LICENCE`, `INCOME_CERTIFICATE`, `DOMICILE_CERTIFICATE`, `BIRTH_CERTIFICATE`, `PROPERTY_DOCUMENT`, `OTHER`, or `UNKNOWN`) and an optional service `requirementId`. Only PDF, JPG/JPEG, and PNG are accepted, with matching MIME type, extension, and file signature, and a 10 MB ceiling. Image pixel count, PDF page count, OCR concurrency, OCR text size, and OCR processing time are bounded. Original filenames never form storage paths; generated UUID filenames are stored under `UPLOAD_DIR`, and the API never exposes storage paths.
-
-`Tesseract.js` performs image OCR. `pdf-parse` extracts embedded PDF text; scanned PDFs without an embedded text layer require a future PDF-to-image renderer before Tesseract can read them. The default analysis is deterministic and local—there is no LLM/API-key dependency. It recognizes only supported evidence, returns `null` for uncertain fields, validates the structured result with Zod, and labels all results `DEMO/PROTOTYPE`. It is not authentication, legal signature/seal inspection, or government-document authenticity verification.
-
-Tesseract may download its English language data on the first image analysis unless it is pre-provisioned in the deployment environment. Production deployments should provide controlled outbound access or bundle that language data; no external LLM key is needed.
-
-## Batch 4 migration
-
-`prisma/migrations/20260910_batch4_document_hardening/migration.sql` is additive and must be reviewed before deployment. It adds the `DOCUMENT` verification type, `documents.sha256`, `documents.expected_document_type`, and document/type verification uniqueness. It intentionally stops rather than inventing hashes if legacy document rows lack source-derived SHA-256 values.
-
-## Demo data
-
-The seed creates synthetic prototype accounts and service data.
-
-**DEMO ONLY - NOT REAL GOVERNMENT ACCOUNTS**
-
-- Citizen: `demo.citizen@jansevax.test`
-- Officer: `demo.officer@jansevax.test`
-- Password: `DemoPassword123!`
-
-The demo accounts contain no real identity, Aadhaar, PAN, or biometric data. They exist only after a successful local migration and seed.
+JANSEVA-X Citizen Backend is a TypeScript, Express, and Prisma prototype for citizen-owned government-service applications. It is a demonstration system, not a government service.
 
 ## Prototype boundary
 
-This backend has no live UIDAI, PAN, biometric, e-KYC, government API, or legally valid e-sign integration. Authentication is prototype application authentication only.
+All Aadhaar, PAN, face, fingerprint, e-KYC, document-issuance, and e-sign integrations are deterministic **MOCK / DEMO** implementations. The backend does not contact UIDAI, PAN/CBDT, biometric hardware, e-KYC, e-sign, DigiLocker, or government systems. Generated completion certificates are marked **DEMO / PROTOTYPE** and have no legal validity.
+
+This backend does not implement complaints, RTI, benefits, payments, analytics, employee workflows, or a citizen-facing officer approval API.
+
+## Citizen lifecycle
+
+The supported prototype lifecycle is:
+
+`DRAFT` -> upload/analyze documents -> mock identity verification -> `IDENTITY_VERIFIED` -> citizen submission -> `SUBMITTED` -> external/officer review boundary -> `APPROVED` -> demo certificate issuance -> mock e-sign -> `SIGNED` -> citizen acknowledgement -> `COMPLETED`
+
+- Documents can be uploaded, deleted, or analyzed only while an application is `DRAFT`.
+- Identity verification is performed against a citizen-owned `DRAFT` application and transitions it to `IDENTITY_VERIFIED` when all required mock checks pass.
+- A citizen can submit only an `IDENTITY_VERIFIED` application.
+- `APPROVED` is an external/officer-owned boundary. This citizen backend intentionally has no public approval route.
+- Demo certificate issuance requires an active officer or admin account and `DEMO_DOCUMENT_ISSUER_ENABLED=true`.
+
+## Security controls
+
+- JWT authentication, role checks, active-account checks, and citizen ownership isolation on protected citizen routes.
+- Password hashing, refresh-token hashing, and JWT secret validation.
+- Helmet, rate limiting, explicit production CORS origins, request-size limits, and centralized API errors.
+- UUID-based stored filenames, file-type/size validation, and path-safe download handling.
+- Bounded OCR output; Aadhaar and PAN numbers are masked in persisted document-analysis metadata.
+- Generated-document integrity hashes, expiring signing challenges, consent capture, transaction retries, and idempotent signing/completion behavior.
+
+## Setup
+
+Prerequisites: Node.js 20+ and PostgreSQL 14+.
+
+1. Copy `.env.example` to `.env` and set a strong `JWT_SECRET` and a valid `DATABASE_URL`.
+2. Install the lockfile-pinned dependencies: `npm ci`.
+3. Generate Prisma Client: `npm run prisma:generate`.
+4. Review every existing migration SQL file before applying it to a new local database, then run `npm run prisma:migrate`.
+5. Optionally seed a disposable local database with `npm run prisma:seed`.
+6. Start development: `npm run dev`.
+
+Do not use `prisma db push`, reset a shared database, or edit/reapply historical migrations. The `prisma:migrate` script creates development migrations; deployment environments must use reviewed, already-committed migrations via `prisma migrate deploy`.
+
+## Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string. |
+| `JWT_SECRET` | Required secret, at least 32 characters. |
+| `JWT_EXPIRES_IN` | Access-token lifetime. |
+| `CORS_ORIGIN` | Comma-separated allowed origins. `*` is rejected when `NODE_ENV=production`. |
+| `UPLOAD_DIR` | Local prototype storage directory for uploaded files. |
+| `MAX_FILE_SIZE_MB` | Upload-size limit. |
+| `DEMO_DOCUMENT_ISSUER_ENABLED` | Enables the officer/admin demo certificate-issuance bridge only. |
+
+## API overview
+
+Public routes expose service catalog data and authentication (`/api/auth/register`, `/login`, `/refresh`, `/logout`, `/me`). Citizen application routes are under `/api/applications`; document routes are nested beneath their owning application; identity routes are under `/api/verification`; and generated-document routes are under `/api/applications/:applicationId/generated-documents`.
+
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for request contracts, ownership rules, lifecycle behavior, and demo limitations.
+
+## Migrations and prototype data
+
+The repository contains the reviewed schema history, including the Batch 6 generated-document migration. Batch 7 and Batch 8 require no additional migration. Keep migration history immutable after it has been reviewed or applied.
+
+Local seeds and mock providers are demonstration data only; they must not be treated as production integrations or records.
+
+## Known dependency risk
+
+`npm audit --omit=dev` currently reports high-severity advisories in the existing dependency tree (including Express, Multer, and Prisma tooling). Dependency updates are deliberately outside this batch and should be separately reviewed, tested, and scheduled before a real production deployment.

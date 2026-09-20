@@ -1,0 +1,36 @@
+{
+  "name": "janseva-x-employee-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:types": "tsc -p tsconfig.test.json",
+    "prisma:generate": "node scripts/link-citizen-prisma-client.cjs"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0",
+    "cors": "2.8.5",
+    "dotenv": "16.6.1",
+    "express": "4.21.2",
+    "express-rate-limit": "7.5.0",
+    "helmet": "8.1.0",
+    "jsonwebtoken": "9.0.2",
+    "morgan": "1.10.0",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.17",
+    "@types/express": "5.0.1",
+    "@types/jsonwebtoken": "9.0.9",
+    "@types/morgan": "1.9.9",
+    "@types/node": "22.13.14",
+    "@types/supertest": "6.0.2",
+    "prisma": "6.19.0",
+    "supertest": "7.1.0",
+    "tsx": "4.19.3",
+    "typescript": "5.8.2",
+    "vitest": "3.1.1"
+  }
+}

@@ -1,9 +1,11 @@
 import type { Express } from "express";
 import path from "path";
+import { inflateSync } from "zlib";
 import { AppError } from "../utils/app-error";
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 20_000_000;
+const MAX_PNG_DECOMPRESSED_BYTES = 100 * 1024 * 1024;
 
 const allowedFiles: Record<string, ReadonlySet<string>> = {
   "application/pdf": new Set([".pdf"]),
@@ -16,7 +18,7 @@ export function assertValidDocumentFile(file: Express.Multer.File): void {
   if (!allowedFiles[file.mimetype]?.has(extension)) throw new AppError("Only PDF, JPG, JPEG, and PNG files are supported", 400);
   if (file.size > MAX_DOCUMENT_BYTES) throw new AppError("Uploaded file exceeds the 10 MB limit", 413);
   if (!hasExpectedSignature(file.buffer, file.mimetype)) throw new AppError("File content does not match its declared document type", 400);
-  if (file.mimetype !== "application/pdf") assertImageDimensions(file.buffer, file.mimetype);
+  if (file.mimetype !== "application/pdf") assertValidImageContents(file.buffer, file.mimetype);
 }
 
 export function hasExpectedSignature(contents: Buffer, mimeType: string): boolean {
@@ -29,6 +31,37 @@ export function assertImageDimensions(contents: Buffer, mimeType: string): void 
   const dimensions = imageDimensions(contents, mimeType);
   if (!dimensions || dimensions.width < 1 || dimensions.height < 1) throw new AppError("Image content is malformed", 400);
   if (dimensions.width * dimensions.height > MAX_IMAGE_PIXELS) throw new AppError("Image dimensions exceed the document processing limit", 422);
+}
+
+/**
+ * Verify image data before it reaches the OCR worker. Header-only checks can
+ * accept corrupt PNG payloads, and native OCR decoders may abort on them.
+ */
+export function assertValidImageContents(contents: Buffer, mimeType: string): void {
+  assertImageDimensions(contents, mimeType);
+  if (mimeType === "image/png") assertPngPayloadIsDecodable(contents);
+}
+
+function assertPngPayloadIsDecodable(contents: Buffer): void {
+  let offset = 8;
+  const idat: Buffer[] = [];
+  let foundIend = false;
+
+  try {
+    while (offset + 12 <= contents.length) {
+      const length = contents.readUInt32BE(offset);
+      const chunkEnd = offset + 12 + length;
+      if (chunkEnd > contents.length) throw new Error("Truncated PNG chunk");
+      const type = contents.subarray(offset + 4, offset + 8).toString("ascii");
+      if (type === "IDAT") idat.push(contents.subarray(offset + 8, offset + 8 + length));
+      if (type === "IEND") { foundIend = length === 0 && chunkEnd === contents.length; break; }
+      offset = chunkEnd;
+    }
+    if (!foundIend || idat.length === 0) throw new Error("Missing PNG image data");
+    inflateSync(Buffer.concat(idat), { maxOutputLength: MAX_PNG_DECOMPRESSED_BYTES });
+  } catch {
+    throw new AppError("Image content is malformed", 400);
+  }
 }
 
 function imageDimensions(contents: Buffer, mimeType: string): { width: number; height: number } | null {

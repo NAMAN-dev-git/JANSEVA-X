@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { AuthService } from "../services/auth.service";
-import type { LoginRequestBody, RefreshRequestBody, RegisterRequestBody } from "../validators/auth.validators";
+import type { DemoLoginRequestBody, LoginRequestBody, RefreshRequestBody, RegisterRequestBody } from "../validators/auth.validators";
 
 const authService = new AuthService();
 
@@ -16,6 +16,12 @@ export async function register(request: Request, response: Response): Promise<vo
 export async function login(request: Request, response: Response): Promise<void> {
   const { email, password } = bodyAs<LoginRequestBody>(request);
   const result = await authService.login(email, password);
+  response.status(200).json({ success: true, data: result });
+}
+
+export async function demoLogin(request: Request, response: Response): Promise<void> {
+  const { mobile, otp } = bodyAs<DemoLoginRequestBody>(request);
+  const result = await authService.loginDemo(mobile, otp);
   response.status(200).json({ success: true, data: result });
 }
 

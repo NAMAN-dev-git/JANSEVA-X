@@ -13,6 +13,8 @@ const environmentSchema = z.object({
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
   UPLOAD_DIR: z.string().min(1).default("uploads"),
   MAX_FILE_SIZE_MB: z.coerce.number().positive().max(100).default(10),
+  SUBMISSION_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(500).max(60_000).default(2_000),
+  DEMO_DOCUMENT_ISSUER_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);
@@ -22,6 +24,26 @@ if (!parsedEnvironment.success) {
   throw new Error(`Invalid environment configuration: ${errors}`);
 }
 
-export const env = parsedEnvironment.data;
+const defaultDevelopmentCorsOrigin = "http://localhost:5173";
 
-export const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean);
+/** Production must declare an explicit browser-origin allow-list rather than inheriting a local default. */
+export function resolveCorsOrigin(value: string | undefined, nodeEnv: "development" | "test" | "production"): string {
+  const configured = value?.trim();
+  if (configured) return configured;
+  if (nodeEnv === "production") throw new Error("CORS_ORIGIN must be explicitly configured in production");
+  return defaultDevelopmentCorsOrigin;
+}
+
+export const env = {
+  ...parsedEnvironment.data,
+  CORS_ORIGIN: resolveCorsOrigin(process.env.CORS_ORIGIN, parsedEnvironment.data.NODE_ENV),
+};
+
+export function parseCorsOrigins(value: string, nodeEnv: "development" | "test" | "production" = env.NODE_ENV): string[] {
+  const origins = value.split(",").map((origin) => origin.trim()).filter(Boolean);
+  if (nodeEnv === "production" && origins.length === 0) throw new Error("CORS_ORIGIN must include at least one explicit origin in production");
+  if (nodeEnv === "production" && origins.includes("*")) throw new Error("CORS_ORIGIN cannot include * in production when credentials are enabled");
+  return origins;
+}
+
+export const corsOrigins = parseCorsOrigins(env.CORS_ORIGIN);

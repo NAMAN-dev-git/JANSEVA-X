@@ -56,7 +56,7 @@ export const updateApplicationRequestSchema = z.object({
 });
 
 export const submitApplicationRequestSchema = z.object({
-  body: z.object({}).strict(),
+  body: z.object({ idempotencyKey: uuid.optional() }).strict(),
   params: z.object({ applicationId: uuid }).strict(),
   query: z.object({}),
 });
@@ -64,3 +64,4 @@ export const submitApplicationRequestSchema = z.object({
 export type CreateApplicationRequestBody = z.infer<typeof createApplicationRequestSchema>["body"];
 export type ListApplicationsRequestQuery = z.infer<typeof listApplicationsRequestSchema>["query"];
 export type UpdateApplicationRequestBody = z.infer<typeof updateApplicationRequestSchema>["body"];
+export type SubmitApplicationRequestBody = z.infer<typeof submitApplicationRequestSchema>["body"];

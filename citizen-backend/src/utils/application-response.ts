@@ -1,5 +1,42 @@
 import type { ApplicationDetails, ApplicationWithService, ServiceWithRequirements } from "../repositories/application.repository";
 
+type MockIssuedAttachmentInput = {
+  id: string;
+  requirementId: string;
+  attachedAt: Date;
+  mockIssuedDocument: {
+    id: string;
+    documentType: string;
+    displayName: string;
+    issuer: string;
+    issueDate: Date;
+    expiryDate: Date | null;
+    status: string;
+    isDemo: boolean;
+  };
+};
+
+export function presentMockIssuedDocumentAttachment(attachment: MockIssuedAttachmentInput, requirementName?: string) {
+  return {
+    attachmentId: attachment.id,
+    requirementId: attachment.requirementId,
+    requirementName: requirementName ?? null,
+    attachedAt: attachment.attachedAt,
+    source: "MOCK_ISSUED_DOCUMENT" as const,
+    mockIssuedDocument: {
+      documentId: attachment.mockIssuedDocument.id,
+      documentType: attachment.mockIssuedDocument.documentType,
+      displayName: attachment.mockIssuedDocument.displayName,
+      issuer: attachment.mockIssuedDocument.issuer,
+      issueDate: attachment.mockIssuedDocument.issueDate,
+      expiryDate: attachment.mockIssuedDocument.expiryDate,
+      status: attachment.mockIssuedDocument.status,
+      isDemo: attachment.mockIssuedDocument.isDemo,
+      mode: "DEMO/PROTOTYPE" as const,
+    },
+  };
+}
+
 export function presentService(service: ServiceWithRequirements | ApplicationWithService["service"]) {
   return {
     serviceId: service.id,
@@ -65,6 +102,22 @@ export function presentApplicationDetails(application: ApplicationDetails) {
       status: applicationDocument.document.status,
       rejectionReason: applicationDocument.document.rejectionReason,
       uploadedAt: applicationDocument.document.uploadedAt,
+    })),
+    mockIssuedDocumentAttachments: (application.mockIssuedDocumentAttachments ?? []).map((attachment) => presentMockIssuedDocumentAttachment(
+      attachment,
+      application.service.requirements.find((requirement) => requirement.id === attachment.requirementId)?.name,
+    )),
+    generatedDocuments: application.generatedDocuments.map((document) => ({
+      generatedDocumentId: document.id,
+      documentType: document.documentType,
+      originalFilename: document.originalFilename,
+      mimeType: document.mimeType,
+      fileSizeBytes: document.fileSizeBytes,
+      sha256: document.sha256,
+      templateVersion: document.templateVersion,
+      signatureStatus: document.signatureStatus,
+      generatedAt: document.generatedAt,
+      signedAt: document.signedAt,
     })),
   };
 }

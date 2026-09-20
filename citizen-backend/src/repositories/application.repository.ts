@@ -8,6 +8,8 @@ export type ApplicationDetails = Prisma.ApplicationGetPayload<{
     service: { include: { requirements: true } };
     statusHistory: true;
     applicationDocuments: { include: { document: true } };
+    mockIssuedDocumentAttachments: { include: { mockIssuedDocument: true } };
+    generatedDocuments: true;
   };
 }>;
 
@@ -27,7 +29,6 @@ export interface ApplicationRepository {
   listCitizenApplications(filter: ApplicationListFilter): Promise<{ applications: ApplicationWithService[]; total: number }>;
   findCitizenApplication(applicationId: string, citizenId: string): Promise<ApplicationDetails | null>;
   updateDraftApplication(applicationId: string, citizenId: string, formData: Prisma.InputJsonValue): Promise<ApplicationDetails | null>;
-  submitDraftApplication(applicationId: string, citizenId: string, userId: string, submittedAt: Date): Promise<ApplicationDetails | null>;
 }
 
 export class PrismaApplicationRepository implements ApplicationRepository {
@@ -90,6 +91,8 @@ export class PrismaApplicationRepository implements ApplicationRepository {
         service: { include: { requirements: { orderBy: { sortOrder: "asc" } } } },
         statusHistory: { orderBy: { createdAt: "asc" } },
         applicationDocuments: { include: { document: true }, orderBy: { createdAt: "asc" } },
+        mockIssuedDocumentAttachments: { include: { mockIssuedDocument: true }, orderBy: { attachedAt: "asc" } },
+        generatedDocuments: { orderBy: { generatedAt: "asc" } },
       },
     });
   }
@@ -102,26 +105,4 @@ export class PrismaApplicationRepository implements ApplicationRepository {
     return updated.count === 1 ? this.findCitizenApplication(applicationId, citizenId) : null;
   }
 
-  async submitDraftApplication(applicationId: string, citizenId: string, userId: string, submittedAt: Date): Promise<ApplicationDetails | null> {
-    return prisma.$transaction(async (transaction) => {
-      const updated = await transaction.application.updateMany({
-        where: { id: applicationId, citizenId, status: ApplicationStatus.DRAFT },
-        data: { status: ApplicationStatus.SUBMITTED, submittedAt },
-      });
-      if (updated.count !== 1) return null;
-
-      await transaction.applicationStatusHistory.create({
-        data: { applicationId, status: ApplicationStatus.SUBMITTED, note: "Application submitted", changedByUserId: userId },
-      });
-
-      return transaction.application.findFirst({
-        where: { id: applicationId, citizenId },
-        include: {
-          service: { include: { requirements: { orderBy: { sortOrder: "asc" } } } },
-          statusHistory: { orderBy: { createdAt: "asc" } },
-          applicationDocuments: { include: { document: true }, orderBy: { createdAt: "asc" } },
-        },
-      });
-    });
-  }
 }

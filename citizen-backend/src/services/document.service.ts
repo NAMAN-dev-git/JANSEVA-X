@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { ApplicationStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type { Express } from "express";
 import path from "path";
@@ -27,6 +28,7 @@ export class DocumentService {
     const citizen = await this.getCitizen(userId);
     const application = await this.repository.findOwnedApplication(applicationId, citizen.id);
     if (!application) throw new AppError("Application not found", 404);
+    assertApplicationDocumentMutationAllowed(application.status);
     assertValidDocumentFile(input.file);
     if (input.requirementId && !application.service.requirements.some((requirement) => requirement.id === input.requirementId)) {
       throw new AppError("Service requirement not found for this application", 400);
@@ -67,6 +69,7 @@ export class DocumentService {
     const document = await this.getOwnedDocument(documentId, citizen.id);
     const applicationId = document.applicationLinks[0]?.applicationId;
     if (!applicationId) throw new AppError("Document not found", 404);
+    assertApplicationDocumentMutationAllowed(document.applicationLinks[0].application.status);
     const deletedPhysicalDocument = await this.repository.deleteApplicationDocument({ documentId, applicationId });
     if (deletedPhysicalDocument) await this.storage.remove(document.storageKey);
   }
@@ -76,6 +79,7 @@ export class DocumentService {
     const document = await this.getOwnedDocument(documentId, citizen.id);
     const application = document.applicationLinks.find((link) => link.application.citizenId === citizen.id)?.application;
     if (!application) throw new AppError("Document not found", 404);
+    assertApplicationDocumentMutationAllowed(application.status);
     const contents = await this.storage.read(document.storageKey);
     const ocrText = await this.ocr.extract({ contents, mimeType: document.mimeType });
     const existingRequirementId = document.applicationLinks.find((link) => link.applicationId === application.id)?.requirementId ?? undefined;
@@ -83,20 +87,20 @@ export class DocumentService {
     const requiredDocumentNames = application.service.requirements
       .filter((requirement) => requirement.isRequired && requirement.id !== inferredRequirementId && !application.applicationDocuments.some((link) => link.requirementId === requirement.id))
       .map((requirement) => requirement.name);
-    const analysis = documentAnalysisSchema.parse(await this.analyzer.analyze({
+    const analysis = minimizeDocumentAnalysis(documentAnalysisSchema.parse(await this.analyzer.analyze({
       ocrText,
       originalFilename: document.originalFilename,
       expectedDocumentType: normalizeDocumentType(document.expectedDocumentType),
       applicationData: application.formData,
       requiredDocumentNames,
-    }));
+    })));
     const persisted = await this.repository.updateAnalysis({
       documentId,
       applicationId: application.id,
       citizenId: citizen.id,
       detectedDocumentType: analysis.documentType,
       requirementId: inferredRequirementId,
-      analysis: { analysis, ocr: { provider: "TesseractOcrProvider", text: ocrText.slice(0, 100_000) }, mode: "DEMO/PROTOTYPE automated analysis; not government or authenticity verification", verificationState: "MANUAL_REVIEW_REQUIRED" } as Prisma.InputJsonValue,
+      analysis: { analysis, ocr: { provider: "TesseractOcrProvider", textLength: ocrText.length }, mode: "DEMO/PROTOTYPE automated analysis; not government or authenticity verification", verificationState: "MANUAL_REVIEW_REQUIRED" } as Prisma.InputJsonValue,
     });
     return { document: persisted, analysis };
   }
@@ -104,7 +108,7 @@ export class DocumentService {
   async verification(userId: string, documentId: string): Promise<DocumentAnalysis | null> {
     const document = await this.get(userId, documentId);
     const result = document.aiExtractionResult as { analysis?: unknown } | null;
-    return result?.analysis ? documentAnalysisSchema.parse(result.analysis) : null;
+    return result?.analysis ? minimizeDocumentAnalysis(documentAnalysisSchema.parse(result.analysis)) : null;
   }
 
   private async getCitizen(userId: string) {
@@ -132,4 +136,18 @@ function inferRequirementId(requirements: Array<{ id: string; name: string }>, d
 
 function detectOnly(text: string, originalFilename: string, expectedType: string | null): DocumentType {
   return detectDocumentType(text, originalFilename, normalizeDocumentType(expectedType));
+}
+
+function assertApplicationDocumentMutationAllowed(status: ApplicationStatus): void {
+  if (status !== ApplicationStatus.DRAFT) throw new AppError("Documents can be changed only while the application is a draft", 409);
+}
+
+function minimizeDocumentAnalysis(analysis: DocumentAnalysis): DocumentAnalysis {
+  if (analysis.documentType !== "AADHAAR" && analysis.documentType !== "PAN") return analysis;
+  const documentNumber = analysis.fields.documentNumber;
+  if (!documentNumber) return analysis;
+  const maskedDocumentNumber = analysis.documentType === "AADHAAR"
+    ? `XXXX-XXXX-${documentNumber.replace(/\D/g, "").slice(-4)}`
+    : `${documentNumber.slice(0, 5)}****${documentNumber.slice(-1)}`;
+  return { ...analysis, fields: { ...analysis.fields, documentNumber: maskedDocumentNumber } };
 }

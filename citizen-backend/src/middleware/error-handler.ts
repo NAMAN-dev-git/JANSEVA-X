@@ -26,7 +26,9 @@ export function errorHandler(error: unknown, request: Request, response: Respons
   }
 
   if (error instanceof PrismaClientKnownRequestError) {
-    response.status(error.code === "P2002" ? 409 : 400).json({ success: false, error: { code: "DATABASE_ERROR", message: "The request could not be processed" }, requestId: request.requestId });
+    const conflict = error.code === "P2002" || error.code === "P2034";
+    const message = error.code === "P2034" ? "The request conflicted with another update; retry the request" : "The request could not be processed";
+    response.status(conflict ? 409 : 400).json({ success: false, error: { code: "DATABASE_ERROR", message }, requestId: request.requestId });
     return;
   }
 

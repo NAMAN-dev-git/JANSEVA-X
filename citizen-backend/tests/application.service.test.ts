@@ -9,7 +9,7 @@ import {
   type ServiceWithRequirements,
 } from "../src/repositories/application.repository";
 import { ApplicationService } from "../src/services/application.service";
-import { assertCitizenStatusTransition } from "../src/services/application-status.service";
+import { assertCitizenStatusTransition, assertIdentityVerificationTransition } from "../src/services/application-status.service";
 import { CatalogService } from "../src/services/catalog.service";
 import { AppError } from "../src/utils/app-error";
 
@@ -127,15 +127,6 @@ class MemoryApplicationRepository implements ApplicationRepository {
     return application;
   }
 
-  async submitDraftApplication(applicationId: string, citizenId: string, userId: string, submittedAt: Date): Promise<ApplicationDetails | null> {
-    const application = await this.findCitizenApplication(applicationId, citizenId);
-    if (!application || application.status !== ApplicationStatus.DRAFT) return null;
-    application.status = ApplicationStatus.SUBMITTED;
-    application.submittedAt = submittedAt;
-    application.updatedAt = submittedAt;
-    application.statusHistory.push({ id: randomUUID(), applicationId, status: ApplicationStatus.SUBMITTED, note: "Application submitted", changedByUserId: userId, createdAt: submittedAt });
-    return application;
-  }
 }
 
 describe("CatalogService", () => {
@@ -210,31 +201,19 @@ describe("ApplicationService", () => {
     expect(history.map((entry) => entry.status)).toEqual([ApplicationStatus.DRAFT]);
   });
 
-  it("submits a draft and records the only implemented transition", async () => {
-    const application = await createForCitizenA();
-    const submitted = await service.submitDraft("citizen-a", application.id);
-
-    expect(submitted).toMatchObject({ status: ApplicationStatus.SUBMITTED });
-    expect(submitted.submittedAt).not.toBeNull();
-    expect(submitted.statusHistory.map((entry) => entry.status)).toEqual([ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED]);
-    await expect(service.updateDraft("citizen-a", application.id, { rejected: true })).rejects.toMatchObject({ statusCode: 409 });
-  });
-
   it("rejects invalid citizen status transitions", () => {
-    expect(() => assertCitizenStatusTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).not.toThrow();
-    expect(() => assertCitizenStatusTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.SUBMITTED)).toThrow(AppError);
+    expect(() => assertCitizenStatusTransition(ApplicationStatus.IDENTITY_VERIFIED, ApplicationStatus.SUBMITTED)).not.toThrow();
+    expect(() => assertCitizenStatusTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).toThrow(AppError);
   });
 
-  it("prevents one citizen from reading, updating, or submitting another citizen application", async () => {
+  it("allows only the verification-service transition from DRAFT to IDENTITY_VERIFIED", () => {
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.DRAFT, ApplicationStatus.IDENTITY_VERIFIED)).not.toThrow();
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.IDENTITY_VERIFIED)).toThrow(AppError);
+  });
+
+  it("prevents one citizen from reading or updating another citizen application", async () => {
     const application = await createForCitizenA();
     await expect(service.getCitizenApplication("citizen-b", application.id)).rejects.toMatchObject({ statusCode: 404 });
     await expect(service.updateDraft("citizen-b", application.id, { businessName: "Unauthorized" })).rejects.toMatchObject({ statusCode: 404 });
-    await expect(service.submitDraft("citizen-b", application.id)).rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it("rejects submission when the associated service is no longer active", async () => {
-    const application = await createForCitizenA();
-    activeService.isActive = false;
-    await expect(service.submitDraft("citizen-a", application.id)).rejects.toMatchObject({ statusCode: 409 });
   });
 });
