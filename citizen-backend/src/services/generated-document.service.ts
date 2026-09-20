@@ -28,6 +28,10 @@ export class GeneratedDocumentService {
     if (!application) throw new AppError("Application not found", 404);
     if (application.status !== ApplicationStatus.APPROVED) throw new AppError("Generated documents can be issued only for approved applications", 409);
 
+    const issuanceKey = digest(`batch6:${applicationId}:${COMPLETION_CERTIFICATE_TYPE}`);
+    const previouslyIssued = await this.repository.findGeneratedDocumentByIssuanceKey(issuanceKey);
+    if (previouslyIssued) return presentGeneratedDocument(previouslyIssued);
+
     const generatedAt = new Date();
     const contents = await this.renderer.renderCompletionCertificate({
       applicationNumber: application.applicationNumber,
@@ -48,12 +52,15 @@ export class GeneratedDocumentService {
         sha256: digest(contents),
         templateVersion: COMPLETION_TEMPLATE_VERSION,
         generatedByUserId: userId,
-        issuanceKey: digest(`batch6:${applicationId}:${COMPLETION_CERTIFICATE_TYPE}`),
+        issuanceKey,
       });
       return presentGeneratedDocument(document);
     } catch (error) {
       await this.storage.remove(stored.storageKey);
-      if (isUniqueViolation(error)) throw new AppError("Completion certificate has already been issued for this application", 409);
+      if (isUniqueViolation(error)) {
+        const concurrentlyIssued = await this.repository.findGeneratedDocumentByIssuanceKey(issuanceKey);
+        if (concurrentlyIssued) return presentGeneratedDocument(concurrentlyIssued);
+      }
       throw error;
     }
   }

@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:types": "tsc -p tsconfig.test.json",
-    "prisma:generate": "prisma generate --schema ../citizen-backend/prisma/schema.prisma"
+    "prisma:generate": "node scripts/link-citizen-prisma-client.cjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",

@@ -52,6 +52,13 @@ export class PrismaGeneratedDocumentRepository {
     return this.database.generatedDocument.create({ data: { ...input, signatureStatus: "NOT_SIGNED" }, include: generatedDocumentInclude });
   }
 
+  findGeneratedDocumentByIssuanceKey(issuanceKey: string): Promise<GeneratedDocumentWithApplication | null> {
+    return this.database.generatedDocument.findUnique({
+      where: { issuanceKey },
+      include: generatedDocumentInclude,
+    });
+  }
+
   findSigningSession(sessionId: string, citizenId: string): Promise<SigningSessionWithDocument | null> {
     return this.database.generatedDocumentSigningSession.findFirst({
       where: { id: sessionId, citizenId },

@@ -1,11 +1,11 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { citizenApi } from "../api/citizen";
 import { ApiError } from "../api/client";
 import { useAuth } from "../app/AuthContext";
 import { EmptyState, ErrorMessage, Loading, StatusBadge, SuccessMessage } from "../components/Ui";
-import type { FingerprintSession, Verification, VerificationSummary } from "../types/api";
+import type { FingerprintSession, MockIssuedDocument, Verification, VerificationSummary } from "../types/api";
 
 const fingerprintSteps = [
   { id: "RIGHT_INDEX", label: "Index Finger" },
@@ -27,6 +27,38 @@ function formatApiError(error: unknown) {
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+type SyntheticScanData = { finger: string; sampleHash: string; challengeHash: string; verificationHash: string };
+
+function fallbackDemoDigest(value: string): string {
+  let state = 2166136261;
+  for (let index = 0; index < value.length; index += 1) state = Math.imul(state ^ value.charCodeAt(index), 16777619);
+  return Array.from({ length: 8 }, (_, index) => {
+    state = Math.imul(state ^ (state >>> 13) ^ index, 2246822519);
+    return (state >>> 0).toString(16).padStart(8, "0");
+  }).join("");
+}
+
+async function syntheticDemoDigest(value: string): Promise<string> {
+  if (!globalThis.crypto?.subtle) return fallbackDemoDigest(value);
+  const bytes = new TextEncoder().encode(value);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function truncateDemoHash(value: string): string {
+  return `${(value.match(/.{1,4}/g) ?? []).slice(0, 6).join(" ")} …`;
+}
+
+async function createSyntheticScanData(sessionId: string, finger: string, scanNumber: number): Promise<SyntheticScanData> {
+  const seed = `JANSEVA-X|DEMO-SYNTHETIC|${sessionId}|${finger}|${scanNumber}`;
+  const [sampleHash, challengeHash, verificationHash] = await Promise.all([
+    syntheticDemoDigest(`${seed}|SAMPLE`),
+    syntheticDemoDigest(`${seed}|CHALLENGE`),
+    syntheticDemoDigest(`${seed}|VALIDATED`)
+  ]);
+  return { finger, sampleHash: truncateDemoHash(sampleHash), challengeHash: truncateDemoHash(challengeHash), verificationHash: truncateDemoHash(verificationHash) };
 }
 
 function fingerprintMobileUrl(qrPayload: string): string | null {
@@ -82,6 +114,7 @@ export function VerificationPage() {
     () => citizenApi.verificationSummary(applicationId!),
     [applicationId]
   );
+  const issuedDocumentsRequest = useRequest(() => citizenApi.issuedDocuments(), []);
 
   const mergeFingerprintSession = (next: FingerprintSession) => {
     setSession((previous) => {
@@ -157,7 +190,7 @@ export function VerificationPage() {
           act={act}
         />
       </section>
-      <MockIdentityChecks applicationId={application.applicationId} verification={verification} busy={busy !== null} act={act} />
+      <MockIdentityChecks applicationId={application.applicationId} verification={verification} documentsRequest={issuedDocumentsRequest} busy={busy !== null} act={act} />
       <VerificationSummaryPanel verification={verification} />
       {pathname.includes("/verify") && <p className="quiet-note">Verification providers in JANSEVA-X are clearly labelled demonstrations. They do not connect to Aadhaar, PAN, UIDAI, or any government biometric system.</p>}
     </>
@@ -391,20 +424,42 @@ function FingerprintLaptop({
 function MockIdentityChecks({
   applicationId,
   verification,
+  documentsRequest,
   busy,
   act
 }: {
   applicationId: string;
   verification: VerificationSummary;
+  documentsRequest: { data: { documents: MockIssuedDocument[] } | null; loading: boolean };
   busy: boolean;
   act: <T,>(name: string, task: () => Promise<T>) => Promise<T>;
 }) {
   const [aadhaar, setAadhaar] = useState("");
   const [pan, setPan] = useState("");
   const [localError, setLocalError] = useState("");
+  const autoVerificationStarted = useRef(false);
   const aadhaarVerified = verification.identityVerification.aadhaar?.status === "VERIFIED";
   const panVerified = verification.identityVerification.pan?.status === "VERIFIED";
   const ekycCompleted = verification.identityVerification.ekyc?.status === "COMPLETED";
+  const aadhaarDocument = documentsRequest.data?.documents.find((document) => document.documentType === "MOCK_AADHAAR_CARD");
+  const panDocument = documentsRequest.data?.documents.find((document) => document.documentType === "MOCK_PAN_CARD");
+  const mockReference = (document: MockIssuedDocument | undefined) => typeof document?.structuredFields?.documentReference === "string" ? document.structuredFields.documentReference : "";
+  useEffect(() => {
+    if (documentsRequest.loading) return;
+    setAadhaar((current) => current || mockReference(aadhaarDocument));
+    setPan((current) => current || mockReference(panDocument));
+  }, [documentsRequest.loading, aadhaarDocument?.documentId, panDocument?.documentId]);
+  useEffect(() => {
+    if (documentsRequest.loading || autoVerificationStarted.current || (aadhaarVerified && panVerified) || !aadhaar.trim() || !pan.trim()) return;
+    autoVerificationStarted.current = true;
+    void (async () => {
+      try {
+        if (!aadhaarVerified) await act("aadhaar", () => citizenApi.aadhaar(applicationId, aadhaar.trim()));
+        if (!panVerified) await act("pan", () => citizenApi.pan(applicationId, pan.trim().toUpperCase()));
+        if (!ekycCompleted) await act("ekyc", () => citizenApi.ekyc(applicationId));
+      } catch { /* The shared error alert explains a rejected demo value. */ }
+    })();
+  }, [aadhaar, pan, aadhaarVerified, panVerified, ekycCompleted, documentsRequest.loading]);
   const verifyAadhaar = async (event: FormEvent) => {
     event.preventDefault();
     if (!aadhaar.trim()) { setLocalError("Enter a valid demo Aadhaar value or masked format."); return; }
@@ -429,13 +484,14 @@ function MockIdentityChecks({
 }
 
 function VerificationSummaryPanel({ verification }: { verification: VerificationSummary }) {
-  const verified = Object.entries(verification.identityVerification).filter(([, item]) => item?.status === "VERIFIED");
-  return <section className="card verification-summary"><h2>Verification status</h2>{verified.length ? <ul className="summary-list">{verified.map(([type, item]) => <li key={item!.verificationId}><span>{type === "face" ? "Face demo" : type}</span><StatusBadge status={item!.status} /></li>)}</ul> : <EmptyState title="No completed verification" text="Complete an available verification step to update this application." />}</section>;
+  const verified = Object.entries(verification.identityVerification).filter(([, item]) => item?.status === "VERIFIED" || item?.status === "COMPLETED");
+  return <section className="card verification-summary"><h2>Verification status</h2>{verified.length ? <ul className="summary-list">{verified.map(([type, item]) => <li key={item!.verificationId}><span>{type === "face" ? "Face demo" : type === "ekyc" ? "Mock e-KYC" : type}</span><StatusBadge status={item!.status === "COMPLETED" ? "Completed" : item!.status} /></li>)}</ul> : <EmptyState title="No completed verification" text="Complete an available verification step to update this application." />}</section>;
 }
 
-export function FingerprintMobilePage() {
+function LegacyFingerprintMobilePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading } = useAuth();
   const parsedPayload = parseFingerprintPayload(searchParams.get("payload") || "");
   const sessionId = parsedPayload?.sessionId || searchParams.get("sessionId") || "";
@@ -449,6 +505,10 @@ export function FingerprintMobilePage() {
     if (!sessionId || !user) return;
     citizenApi.fingerprintStatus(sessionId).then(setSession).catch((caught) => setError(formatApiError(caught)));
   }, [sessionId, user]);
+
+  useLayoutEffect(() => {
+    if (!user && parsedPayload) sessionStorage.setItem("janseva-fingerprint-login-return-to", `${location.pathname}${location.search}`);
+  }, [location.pathname, location.search, parsedPayload, user]);
 
   const pair = async (event: FormEvent) => {
     event.preventDefault();
@@ -477,6 +537,108 @@ export function FingerprintMobilePage() {
 
   if (authLoading) return <Loading label="Restoring session" />;
   return <main className="mobile-page"><div className="brand">JANSEVA-X</div><span className="eyebrow">Mobile companion</span><h1>Demo fingerprint verification</h1><p>Demo biometric verification — simulated five-finger flow. Your device is not asked to capture fingerprint images or biometric data.</p>{!user ? <section className="card"><ErrorMessage message="Sign in with the same citizen account on this phone before pairing the demo session." /><Link className="button primary" to="/login">Sign in</Link></section> : <>{error && <ErrorMessage message={error} />}{success && <SuccessMessage message={success} />}{!sessionId || !pairingChallenge ? <ErrorMessage message="This QR link is incomplete or invalid. Return to the laptop portal and start a new session." /> : !session ? <Loading label="Checking the demo session" /> : session.state === "PENDING_PAIRING" ? <form onSubmit={pair} className="card"><h2>Pair this phone</h2><p>Pair this phone with the temporary demo session. No device biometric data is requested.</p><button className="button primary" type="submit" disabled={busy}>{busy ? "Pairing..." : "Pair phone"}</button></form> : paired || complete ? <section className="card"><div className="panel-heading"><h2>{complete ? "Identity verified" : "Complete the demo sequence"}</h2><StatusBadge status={session.state} /></div><p>{complete ? "VERIFIED — Simulated five-finger verification; no real biometric matching occurred." : `Current finger: ${currentFinger?.label ?? "Not available"}`}</p><ol className="finger-list">{fingerprintSteps.map((finger, index) => <li key={finger.id} className={index < currentIndex || complete ? "complete" : index === currentIndex ? "active" : ""}><span>{index + 1}</span><div><strong>{finger.label}</strong><small>{index < currentIndex || complete ? "Verified" : index === currentIndex ? busy ? "Scanning…" : "Ready to scan" : "Pending"}</small></div></li>)}</ol>{!complete && <button className="button primary" onClick={() => void completeStep()} disabled={busy || !currentFinger}>{busy ? "Scanning..." : `Verify ${currentFinger?.label ?? "next finger"}`}</button>}{complete && <button className="button primary" onClick={() => navigate("/")}>Return to portal</button>}</section> : <ErrorMessage message={session.state === "EXPIRED" ? "This demo session expired. Return to the laptop portal and generate a new QR code." : "This demo session is not ready for phone verification."} />}</>}<p className="quiet-note">This is a simulated prototype. JANSEVA-X does not access, store, or identify real fingerprints.</p></main>;
+}
+
+type ScanPhase = "IDLE" | "SCANNING" | "PROCESSING" | "SUCCESS";
+
+function FingerprintScannerSurface({ phase, finger, disabled, onScanStart, onScanCancel }: { phase: ScanPhase; finger: string; disabled: boolean; onScanStart: () => void; onScanCancel: () => void }) {
+  const instruction = phase === "SCANNING" ? "Scanning fingerprint… keep your finger on the sensor" : phase === "PROCESSING" ? "Validating the synthetic demo sample…" : phase === "SUCCESS" ? "Fingerprint verified" : `Place your ${finger.toLowerCase()} on the scanner`;
+  return <section className="fingerprint-scanner" aria-label="Demo fingerprint scanner"><button type="button" className={`scanner-surface ${phase.toLowerCase()}`} disabled={disabled} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onScanStart(); }} onPointerUp={onScanCancel} onPointerCancel={onScanCancel} onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && !event.repeat) { event.preventDefault(); onScanStart(); } }}><span className="scanner-rings" aria-hidden="true"><i /><i /><i /></span><svg className="fingerprint-glyph" viewBox="0 0 160 190" aria-hidden="true"><path d="M80 18c-31 0-56 25-56 56 0 24 9 41 9 65 0 13-3 24-9 35" /><path d="M80 38c-20 0-36 16-36 36 0 22 8 37 8 60 0 18-5 31-12 43" /><path d="M80 58c-9 0-16 7-16 16 0 23 8 39 5 61-2 16-8 27-14 35" /><path d="M80 18c31 0 56 25 56 56 0 24-9 41-9 65 0 13 3 24 9 35" /><path d="M80 38c20 0 36 16 36 36 0 22-8 37-8 60 0 18 5 31 12 43" /><path d="M80 58c9 0 16 7 16 16 0 23-8 39-5 61 2 16 8 27 14 35" /><path d="M80 78c0 29 7 44 2 67-2 12-7 22-12 30" /></svg><span className="scanner-line" aria-hidden="true" /><span className="scanner-touch-label">{phase === "IDLE" ? "Press and hold to scan" : phase === "SUCCESS" ? "Validated" : "Sensor active"}</span></button><p className="scanner-instruction" aria-live="polite">{instruction}</p></section>;
+}
+
+export function FingerprintMobilePage() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, loading: authLoading } = useAuth();
+  const parsedPayload = parseFingerprintPayload(searchParams.get("payload") || "");
+  const sessionId = parsedPayload?.sessionId || searchParams.get("sessionId") || "";
+  const pairingChallenge = parsedPayload?.pairingChallenge || searchParams.get("pairingChallenge") || "";
+  const [session, setSession] = useState<FingerprintSession | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [scanPhase, setScanPhase] = useState<ScanPhase>("IDLE");
+  const [scanData, setScanData] = useState<SyntheticScanData | null>(null);
+  const scanRun = useRef(0);
+  const holdActive = useRef(false);
+
+  useEffect(() => {
+    if (!sessionId || !user) return;
+    citizenApi.fingerprintStatus(sessionId).then(setSession).catch((caught) => setError(formatApiError(caught)));
+  }, [sessionId, user]);
+
+  useLayoutEffect(() => {
+    if (!user && parsedPayload) sessionStorage.setItem("janseva-fingerprint-login-return-to", `${location.pathname}${location.search}`);
+  }, [location.pathname, location.search, parsedPayload, user]);
+
+  useEffect(() => () => { scanRun.current += 1; }, []);
+
+  const pair = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setError("");
+    try {
+      const next = await citizenApi.pairFingerprint(sessionId, pairingChallenge);
+      setSession(next); setSuccess("Phone paired. Place your first finger on the scanner.");
+    } catch (caught) { setError(formatApiError(caught)); } finally { setBusy(false); }
+  };
+
+  const startScan = () => {
+    if (!session?.currentStep || session.state !== "PAIRED" || busy || scanPhase !== "IDLE") return;
+    const currentStep = session.currentStep;
+    const currentFinger = fingerprintSteps.find((finger) => finger.id === currentStep);
+    if (!currentFinger) return;
+    const run = scanRun.current + 1;
+    scanRun.current = run;
+    holdActive.current = true;
+    setBusy(true); setError(""); setSuccess(""); setScanPhase("SCANNING");
+    void (async () => {
+      try {
+        await delay(700);
+        if (scanRun.current !== run) return;
+        holdActive.current = false;
+        const data = await createSyntheticScanData(session.sessionId, currentFinger.id, session.completedSteps.length + 1);
+        if (scanRun.current !== run) return;
+        setScanData({ ...data, finger: currentFinger.label });
+        setScanPhase("PROCESSING");
+        await delay(650);
+        if (scanRun.current !== run) return;
+        const next = await citizenApi.completeFingerprintStep(session.sessionId, currentStep);
+        if (scanRun.current !== run) return;
+        setSession(next);
+        setScanPhase("SUCCESS");
+        setSuccess(next.completedSteps.length === fingerprintSteps.length ? "Fingerprint verification complete." : `${currentFinger.label} verified. Please place the next finger.`);
+        if (next.completedSteps.length < fingerprintSteps.length) {
+          await delay(900);
+          if (scanRun.current === run) setScanPhase("IDLE");
+        }
+      } catch (caught) {
+        if (scanRun.current === run) { setError(formatApiError(caught)); setScanPhase("IDLE"); }
+      } finally {
+        if (scanRun.current === run) setBusy(false);
+      }
+    })();
+  };
+
+  const cancelHeldScan = () => {
+    if (!holdActive.current) return;
+    holdActive.current = false;
+    scanRun.current += 1;
+    setBusy(false); setScanPhase("IDLE"); setSuccess("Keep your finger on the scanner until the demo sample is captured.");
+  };
+
+  const paired = session?.state === "PAIRED";
+  const complete = session?.state === "COMPLETED";
+  const currentIndex = session?.completedSteps.length ?? 0;
+  const currentFinger = session?.currentStep ? fingerprintSteps.find((finger) => finger.id === session.currentStep) : null;
+  const scannerFinger = scanPhase === "SUCCESS" ? scanData?.finger ?? currentFinger?.label ?? "finger" : currentFinger?.label ?? "finger";
+
+  if (authLoading) return <Loading label="Restoring session" />;
+  if (!user) return <main className="mobile-page"><div className="brand">JANSEVA-X</div><span className="eyebrow">Mobile companion</span><h1>Fingerprint verification</h1><p>This is a simulated fingerprint verification for the JANSEVA-X prototype.</p><section className="card"><ErrorMessage message="Sign in with the same citizen account on this phone before pairing the demo session." /><Link className="button primary" to="/login">Sign in</Link></section></main>;
+  if (!sessionId || !pairingChallenge) return <main className="mobile-page"><ErrorMessage message="This QR link is incomplete or invalid. Return to the laptop portal and start a new session." /></main>;
+  if (!session) return <main className="mobile-page"><Loading label="Checking the demo session" /></main>;
+
+  return <main className="mobile-page fingerprint-companion"><div className="brand">JANSEVA-X</div><span className="eyebrow">Mobile companion · DEMO / PROTOTYPE</span><h1>Fingerprint verification</h1><p className="companion-intro">Identity verification for your application.</p><p className="demo-notice">No real fingerprint data is captured, transmitted, or stored. This deterministic prototype does not use fingerprint hardware or biometric matching.</p>{error && <ErrorMessage message={error} />}{success && <SuccessMessage message={success} />}{session.state === "PENDING_PAIRING" ? <form onSubmit={pair} className="card fingerprint-pairing"><h2>Pair this phone</h2><p>Pair this phone with the temporary demo session, then use the simulated scanner for the five-finger sequence.</p><button className="button primary" type="submit" disabled={busy}>{busy ? "Pairing…" : "Pair phone"}</button></form> : paired ? <section className="card scanner-card"><div className="panel-heading"><div><span className="eyebrow">Fingerprint scanner</span><h2>{scannerFinger}</h2></div><StatusBadge status={scanPhase === "SUCCESS" ? "VERIFIED" : "PAIRED"} /></div><FingerprintScannerSurface phase={scanPhase} finger={scannerFinger} disabled={busy || !currentFinger} onScanStart={startScan} onScanCancel={cancelHeldScan} />{scanData && <section className="synthetic-scan-data" aria-live="polite"><div><span className="eyebrow">DEMO / SYNTHETIC VERIFICATION DATA</span><strong>{scanData.finger} sample validated</strong></div><dl><div><dt>Fingerprint sample</dt><dd>{scanData.sampleHash}</dd></div><div><dt>Challenge fragment</dt><dd>{scanData.challengeHash}</dd></div><div><dt>Verification hash</dt><dd>{scanData.verificationHash}</dd></div></dl><small>Synthetic values only; they are not derived from a real fingerprint or biometric data.</small></section>}<ol className="finger-list">{fingerprintSteps.map((finger, index) => <li key={finger.id} className={index < currentIndex ? "complete" : index === currentIndex ? "active" : ""}><span>{index + 1}</span><div><strong>Finger {index + 1} · {finger.label}</strong><small>{index < currentIndex ? "Completed" : index === currentIndex ? scanPhase === "SCANNING" ? "Scanning…" : scanPhase === "PROCESSING" ? "Validating demo sample…" : "Ready for scan" : "Pending"}</small></div></li>)}</ol></section> : complete ? <section className="card scanner-card fingerprint-final"><div className="panel-heading"><div><span className="eyebrow">Fingerprint scanner</span><h2>Identity verification complete</h2></div><StatusBadge status="VERIFIED" /></div><div className="scanner-complete-mark" aria-hidden="true">✓</div><p>All five fingerprint samples verified.</p><p>Fingerprint verification complete. This was a deterministic JANSEVA-X demo; no real biometric data was captured.</p><ol className="finger-list">{fingerprintSteps.map((finger, index) => <li key={finger.id} className="complete"><span>{index + 1}</span><div><strong>Finger {index + 1} · {finger.label}</strong><small>Completed</small></div></li>)}</ol><button className="button primary" onClick={() => navigate("/")}>Return to portal</button></section> : <ErrorMessage message={session.state === "EXPIRED" ? "This demo session expired. Return to the laptop portal and generate a new QR code." : "This demo session is not ready for phone verification."} />}<p className="quiet-note">The paired session has an expiry and remains authorized by the existing JANSEVA-X backend workflow.</p></main>;
 }
 
 export function VerificationLinkPage() {

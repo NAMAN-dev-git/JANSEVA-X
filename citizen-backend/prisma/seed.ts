@@ -27,28 +27,29 @@ const services = [
 
 async function main() {
   for (const service of services) {
-    await prisma.governmentService.upsert({
+    const seededService = await prisma.governmentService.upsert({
       where: { slug: service.slug },
       update: {
         name: service.name,
         description: service.description,
         isActive: true,
         isPrototype: true,
-        requirements: {
-          deleteMany: {},
-          create: service.requirements.map(([name, description, isRequired], index) => ({ name, description, isRequired, sortOrder: index + 1 })),
-        },
       },
       create: {
         name: service.name,
         slug: service.slug,
         description: service.description,
         isPrototype: true,
-        requirements: {
-          create: service.requirements.map(([name, description, isRequired], index) => ({ name, description, isRequired, sortOrder: index + 1 })),
-        },
       },
     });
+    for (const [name, description, isRequired] of service.requirements) {
+      const sortOrder = service.requirements.findIndex((requirement) => requirement[0] === name) + 1;
+      await prisma.serviceRequirement.upsert({
+        where: { serviceId_name: { serviceId: seededService.id, name } },
+        update: { description, isRequired, sortOrder },
+        create: { serviceId: seededService.id, name, description, isRequired, sortOrder },
+      });
+    }
   }
 
   const passwordHash = await bcrypt.hash("DemoPassword123!", 12);
@@ -125,6 +126,33 @@ async function main() {
       };
       await prisma.mockIssuedDocument.upsert({ where: { documentCode }, update: data, create: { documentCode, ...data } });
     }
+  }
+
+  const examRequirements = [
+    { name: "Identity Proof", documentType: "MOCK_AADHAAR_CARD", isRequired: true, sortOrder: 1 },
+    { name: "Address Proof", documentType: "MOCK_ADDRESS_CERTIFICATE", isRequired: true, sortOrder: 2 },
+    { name: "Educational Qualification", documentType: "MOCK_10TH_MARKSHEET", isRequired: true, sortOrder: 3 },
+    { name: "Domicile Certificate", documentType: "MOCK_DOMICILE_CERTIFICATE", isRequired: false, sortOrder: 4, issuableServiceSlug: "domicile-certificate" },
+    { name: "Photograph", documentType: "DEMO_PHOTOGRAPH", isRequired: false, sortOrder: 5 },
+    { name: "Signature", documentType: "DEMO_SIGNATURE", isRequired: false, sortOrder: 6 },
+  ];
+  const seededExam = await prisma.governmentExam.upsert({
+    where: { slug: "ssc-cgl-2026-demo" },
+    update: {
+      name: "SSC CGL 2026 — DEMO", conductingAuthority: "Staff Selection Commission", status: "OPEN", description: "A fictional JANSEVA-X prototype examination notice. Not live government information.", applicationStartDate: new Date("2026-09-10T00:00:00.000Z"), applicationDeadlineAt: new Date("2026-10-10T18:29:59.999Z"), applicationTimeZone: "Asia/Kolkata", applicationEndDate: new Date("2026-10-10T00:00:00.000Z"), applicationFeePaise: 10000, eligibility: "Bachelor's Degree", examDate: new Date("2026-12-15T00:00:00.000Z"), vacancyCount: 5000, isDemo: true,
+      notificationContent: { overview: "SSC CGL 2026 DEMO notification for the JANSEVA-X prototype.", eligibility: "Bachelor's Degree. This is fictional demo content.", pattern: "Tier I mock objective examination; no real examination is conducted.", syllabus: "Reasoning, quantitative aptitude, English and general awareness — DEMO outline.", applicationProcess: "Review JANSEVA-X demo data, confirm, and complete controlled mock payment.", correctionWindow: "20–25 October 2026", admitCard: "Expected 10 December 2026", answerKey: "Expected 22 December 2026", result: "Expected 15 January 2027" },
+    },
+    create: {
+      slug: "ssc-cgl-2026-demo", name: "SSC CGL 2026 — DEMO", conductingAuthority: "Staff Selection Commission", status: "OPEN", description: "A fictional JANSEVA-X prototype examination notice. Not live government information.", applicationStartDate: new Date("2026-09-10T00:00:00.000Z"), applicationDeadlineAt: new Date("2026-10-10T18:29:59.999Z"), applicationTimeZone: "Asia/Kolkata", applicationEndDate: new Date("2026-10-10T00:00:00.000Z"), applicationFeePaise: 10000, eligibility: "Bachelor's Degree", examDate: new Date("2026-12-15T00:00:00.000Z"), vacancyCount: 5000, isDemo: true,
+      notificationContent: { overview: "SSC CGL 2026 DEMO notification for the JANSEVA-X prototype.", eligibility: "Bachelor's Degree. This is fictional demo content.", pattern: "Tier I mock objective examination; no real examination is conducted.", syllabus: "Reasoning, quantitative aptitude, English and general awareness — DEMO outline.", applicationProcess: "Review JANSEVA-X demo data, confirm, and complete controlled mock payment.", correctionWindow: "20–25 October 2026", admitCard: "Expected 10 December 2026", answerKey: "Expected 22 December 2026", result: "Expected 15 January 2027" },
+    },
+  });
+  for (const requirement of examRequirements) {
+    await prisma.examRequirement.upsert({
+      where: { examId_name: { examId: seededExam.id, name: requirement.name } },
+      update: requirement,
+      create: { examId: seededExam.id, ...requirement },
+    });
   }
 
   const officerUser = await prisma.user.upsert({

@@ -4,7 +4,7 @@ import { ApplicationStatus } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { env, parseCorsOrigins } from "../src/config/env";
+import { env, parseCorsOrigins, resolveCorsOrigin } from "../src/config/env";
 import { errorHandler } from "../src/middleware/error-handler";
 import { createRequireActiveAccount, requireAuth, requireRole } from "../src/middleware/require-auth";
 import { assertCitizenCompletionTransition, assertCitizenStatusTransition, assertGeneratedDocumentSigningTransition, assertIdentityVerificationTransition } from "../src/services/application-status.service";
@@ -31,10 +31,24 @@ describe("Batch 8 active-account authorization", () => {
 
     await request(protectedApp).get("/issue").set("Authorization", `Bearer ${token("OFFICER")}`).expect(403);
   });
+
+  it("allows an active account only when its current role still matches the token", async () => {
+    const protectedApp = express();
+    protectedApp.get("/citizen", requireAuth, createRequireActiveAccount(async () => ({ role: "CITIZEN", isActive: true, officer: null })), requireRole("CITIZEN"), (_request, response) => response.status(200).send());
+    protectedApp.use(errorHandler);
+
+    await request(protectedApp).get("/citizen").set("Authorization", `Bearer ${token()}`).expect(200);
+  });
 });
 
 describe("Batch 8 configuration and conflict responses", () => {
-  it("rejects a production wildcard CORS origin while preserving explicit origins", () => {
+  it("requires an explicit production CORS origin while preserving the development default", () => {
+    expect(() => resolveCorsOrigin(undefined, "production")).toThrow("must be explicitly configured");
+    expect(resolveCorsOrigin(undefined, "development")).toBe("http://localhost:5173");
+  });
+
+  it("rejects empty or wildcard production CORS origins while preserving explicit origins", () => {
+    expect(() => parseCorsOrigins(" , ", "production")).toThrow("at least one explicit origin");
     expect(() => parseCorsOrigins("*", "production")).toThrow("CORS_ORIGIN cannot include *");
     expect(parseCorsOrigins("https://citizen.example, https://admin.example", "production")).toEqual(["https://citizen.example", "https://admin.example"]);
   });
@@ -65,6 +79,11 @@ describe("Batch 8 controlled end-to-end workflow fixture", () => {
     statuses.push(ApplicationStatus.SIGNED);
     assertCitizenCompletionTransition(ApplicationStatus.SIGNED, ApplicationStatus.COMPLETED);
     statuses.push(ApplicationStatus.COMPLETED);
+
+    expect(() => assertIdentityVerificationTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).toThrow("Identity verification transition");
+    expect(() => assertCitizenStatusTransition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)).toThrow("Citizen status transition");
+    expect(() => assertGeneratedDocumentSigningTransition(ApplicationStatus.SUBMITTED, ApplicationStatus.SIGNED)).toThrow("Generated-document signing transition");
+    expect(() => assertCitizenCompletionTransition(ApplicationStatus.APPROVED, ApplicationStatus.COMPLETED)).toThrow("Citizen completion transition");
 
     expect(statuses).toEqual([
       ApplicationStatus.DRAFT,

@@ -1,0 +1,12 @@
+{
+  "name": "JANSEVA-X Citizen Portal",
+  "short_name": "JANSEVA-X",
+  "description": "JANSEVA-X citizen portal prototype static shell.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f8ff",
+  "theme_color": "#0d47c5",
+  "icons": [
+    { "src": "/icons/janseva-x.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,5 +1,5 @@
 import { api, download } from "./client";
-import type { ApplicationDetail, ApplicationStatus, ApplicationSummary, CitizenProfile, DemoCitizenProfile, FingerprintSession, GeneratedDocument, MockIssuedDocument, MockIssuedDocumentAttachment, Pagination, Service, SigningSession, TokenPair, User, Verification, VerificationSummary } from "../types/api";
+import type { ApplicationDetail, ApplicationSubmissionResult, ApplicationStatus, ApplicationSummary, CitizenProfile, DemoCitizenProfile, ExamSubmissionResult, FingerprintSession, GeneratedDocument, MockIssuedDocument, MockIssuedDocumentAttachment, Pagination, Service, SigningSession, SubmissionTicket, TokenPair, User, Verification, VerificationSummary } from "../types/api";
 
 export const citizenApi = {
   register: (body: Record<string, unknown>) => api<{ user: User; tokens: TokenPair }>("/auth/register", { method: "POST", body, skipAuth: true }),
@@ -13,13 +13,26 @@ export const citizenApi = {
   issuedDocuments: () => api<{ documents: MockIssuedDocument[] }>("/citizen/issued-documents"),
   issuedDocument: (id: string) => api<{ document: MockIssuedDocument }>(`/citizen/issued-documents/${id}`),
   services: () => api<{ services: Service[] }>("/services", { skipAuth: true }),
+  exams: () => api<{ exams: unknown[] }>("/exams", { skipAuth: true }),
+  exam: (id: string) => api<{ exam: unknown }>(`/exams/${id}`, { skipAuth: true }),
+  createExamApplication: (examId: string) => api<{ application: unknown }>("/exam-applications", { method: "POST", body: { examId } }),
+  examApplications: () => api<{ applications: unknown[] }>("/exam-applications"),
+  examApplication: (id: string) => api<{ application: unknown }>(`/exam-applications/${id}`),
+  updateExamApplication: (id: string, formData: Record<string, unknown>) => api<{ application: unknown }>(`/exam-applications/${id}`, { method: "PATCH", body: { formData } }),
+  autoAttachExamDocuments: (id: string) => api<{ application: unknown; attached: string[] }>(`/exam-applications/${id}/auto-attach`, { method: "POST", body: {} }),
+  validateExamApplication: (id: string) => api<{ valid: boolean; missingFields: string[]; missingRequirements: unknown[] }>(`/exam-applications/${id}/validate`, { method: "POST", body: {} }),
+  submitExamApplicationIntent: (id: string, body: { idempotencyKey: string; clientCapturedAt: string; payloadHash: string }) => api<ExamSubmissionResult>(`/exam-applications/${id}/submission`, { method: "POST", body }),
+  submitExamApplication: (id: string) => api<{ application: unknown; mode: string; payment: string }>(`/exam-applications/${id}/submit`, { method: "POST", body: {} }),
+  setExamReminder: (id: string) => api<{ reminder: unknown }>(`/exam-applications/${id}/reminder`, { method: "POST", body: {} }),
   service: (id: string) => api<{ service: Service }>(`/services/${id}`, { skipAuth: true }),
   createApplication: (serviceId: string) => api<{ application: ApplicationSummary }>("/applications", { method: "POST", body: { serviceId } }),
   applications: (query = "") => api<{ applications: ApplicationSummary[]; pagination: Pagination }>(`/applications${query}`),
   application: (id: string) => api<{ application: ApplicationDetail }>(`/applications/${id}`),
   updateApplication: (id: string, applicationData: Record<string, unknown>) => api<{ application: ApplicationDetail }>(`/applications/${id}`, { method: "PATCH", body: { applicationData } }),
   history: (id: string) => api<{ history: ApplicationDetail["statusHistory"] }>(`/applications/${id}/history`),
-  submit: (id: string) => api<{ applicationId: string; status: ApplicationStatus; submittedAt: string; service: Service }>(`/applications/${id}/submit`, { method: "POST", body: {} }),
+  submit: (id: string, idempotencyKey?: string) => api<ApplicationSubmissionResult>(`/applications/${id}/submit`, { method: "POST", body: idempotencyKey ? { idempotencyKey } : {} }),
+  submissionTicket: (id: string) => api<{ submissionTicket: SubmissionTicket }>(`/applications/${id}/submission-ticket`),
+  retrySubmissionTicket: (id: string) => api<{ submissionTicket: SubmissionTicket }>(`/applications/${id}/submission-ticket/retry`, { method: "POST", body: {} }),
   complete: (id: string) => api<{ applicationId: string; status: ApplicationStatus; mode: string }>(`/applications/${id}/complete`, { method: "POST", body: {} }),
   documents: (id: string) => api<{ documents: ApplicationDetail["documents"] }>(`/applications/${id}/documents`),
   attachMockIssuedDocument: (applicationId: string, body: { mockIssuedDocumentId: string; requirementId: string }) => api<{ attachment: MockIssuedDocumentAttachment }>(`/applications/${applicationId}/mock-issued-document-attachments`, { method: "POST", body }),

@@ -3,7 +3,11 @@ import type { TokenPair } from "../types/api";
 // Vite exposes VITE_* variables to the browser at build/dev-server startup.
 // Leave VITE_API_URL unset for same-laptop development; set it to the laptop's
 // LAN-reachable backend URL when opening the frontend from a phone.
-const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/+$/, "") || "http://localhost:4000/api";
+const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim().replace(/\/+$/, "");
+const browserHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
+const loopbackHost = browserHost === "localhost" || browserHost === "127.0.0.1" || browserHost === "[::1]";
+const browserApiUrl = loopbackHost ? "http://localhost:4000/api" : `${window.location.protocol}//${browserHost}:4000/api`;
+const API_BASE_URL = configuredApiUrl || browserApiUrl;
 const storageKey = "janseva-x.tokens";
 
 export class ApiError extends Error {
@@ -27,6 +31,7 @@ async function refreshTokens(): Promise<TokenPair> {
   const payload = await response.json().catch(() => null) as { data?: { tokens?: TokenPair }; error?: { message?: string } } | null;
   if (!response.ok || !payload?.data?.tokens) throw new ApiError(payload?.error?.message ?? "Your session has expired. Please sign in again.", response.status);
   setTokens(payload.data.tokens);
+  window.dispatchEvent(new Event("janseva-auth-refreshed"));
   return payload.data.tokens;
 }
 
@@ -39,7 +44,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   if (body && !isFormData && typeof body !== "string" && !requestHeaders.has("Content-Type")) requestHeaders.set("Content-Type", "application/json");
   const requestBody = body && !isFormData && typeof body !== "string" ? JSON.stringify(body) : body;
   let response: Response;
-  try { response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: requestHeaders, body: requestBody }); }
+  try { response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: requestHeaders, body: requestBody, cache: skipAuth ? init.cache : init.cache ?? "no-store" }); }
   catch { throw new ApiError("Network error. Check that the citizen backend is running and try again.", 0); }
   if (response.status === 401 && !skipAuth && !retry && getTokens()?.refreshToken) {
     try { await refreshTokens(); return api<T>(path, { ...options, retry: true }); }
@@ -47,14 +52,16 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   }
   if (response.status === 204) return undefined as T;
   const payload = await response.json().catch(() => null) as { success?: boolean; data?: T; error?: { message?: string; details?: unknown } } | null;
-  if (!response.ok || !payload?.success) throw new ApiError(payload?.error?.message ?? "The request could not be completed.", response.status, payload?.error?.details);
+  // B7 permanent submission receipts are intentionally returned in data with a
+  // non-2xx response. Preserve that structured result for the local sync layer.
+  if (!response.ok || !payload?.success) throw new ApiError(payload?.error?.message ?? "The request could not be completed.", response.status, payload?.data ?? payload?.error?.details);
   return payload.data as T;
 }
 
 export async function download(path: string, retried = false): Promise<Blob> {
   const token = getTokens()?.accessToken;
   let response: Response;
-  try { response = await fetch(`${API_BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }); }
+  try { response = await fetch(`${API_BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: token ? "no-store" : "default" }); }
   catch { throw new ApiError("Network error. Check that the citizen backend is running and try again.", 0); }
   if (response.status === 401 && !retried && getTokens()?.refreshToken) {
     try { await refreshTokens(); return download(path, true); }

@@ -112,6 +112,10 @@ class MemoryGeneratedDocumentRepository {
     return document;
   }
 
+  async findGeneratedDocumentByIssuanceKey(issuanceKey: string) {
+    return this.documents.find((document) => document.issuanceKey === issuanceKey) ?? null;
+  }
+
   async createSigningSession(input: any) {
     if ([...this.sessions.values()].some((session) => session.generatedDocumentId === input.generatedDocumentId && session.status === GeneratedDocumentSigningSessionStatus.PENDING)) {
       throw Object.assign(new Error("active session"), { code: "P2002" });
@@ -203,6 +207,14 @@ describe("GeneratedDocumentService", () => {
 
     repository.application.status = ApplicationStatus.APPROVED;
     await expect(service.issue("officer-1", APPLICATION_ID)).resolves.toMatchObject({ documentType: "COMPLETION_CERTIFICATE", signatureStatus: "NOT_SIGNED" });
+  });
+
+  it("returns the same safe generated document for repeated approved issuance", async () => {
+    const first = await service.issue("officer-1", APPLICATION_ID);
+    const second = await service.issue("officer-1", APPLICATION_ID);
+
+    expect(second).toMatchObject({ generatedDocumentId: first.generatedDocumentId, signatureStatus: "NOT_SIGNED" });
+    expect(repository.documents.filter((document) => document.issuanceKey).length).toBe(1);
   });
 
   it("limits list, get, download, and signing sessions to the owning citizen", async () => {

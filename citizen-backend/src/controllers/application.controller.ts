@@ -1,9 +1,11 @@
 import type { Request, Response } from "express";
 import { ApplicationService } from "../services/application.service";
-import type { CreateApplicationRequestBody, ListApplicationsRequestQuery, UpdateApplicationRequestBody } from "../validators/application.validators";
+import { ApplicationSubmissionService, type SubmissionTicket } from "../services/application-submission.service";
+import type { CreateApplicationRequestBody, ListApplicationsRequestQuery, SubmitApplicationRequestBody, UpdateApplicationRequestBody } from "../validators/application.validators";
 import { presentApplicationDetails, presentApplicationSummary, presentService } from "../utils/application-response";
 
 const applicationService = new ApplicationService();
+const applicationSubmissionService = new ApplicationSubmissionService();
 
 export async function createApplication(request: Request, response: Response): Promise<void> {
   const application = await applicationService.createDraft(request.auth!.userId, request.validated!.body as CreateApplicationRequestBody);
@@ -37,16 +39,30 @@ export async function updateApplication(request: Request, response: Response): P
 
 export async function submitApplication(request: Request, response: Response): Promise<void> {
   const applicationId = (request.validated!.params as { applicationId: string }).applicationId;
-  const application = await applicationService.submitDraft(request.auth!.userId, applicationId);
+  const body = request.validated!.body as SubmitApplicationRequestBody;
+  const result = await applicationSubmissionService.submit(request.auth!.userId, { applicationId, idempotencyKey: body.idempotencyKey });
   response.status(200).json({
     success: true,
     data: {
-      applicationId: application.id,
-      status: application.status,
-      submittedAt: application.submittedAt,
-      service: presentService(application.service),
+      applicationId: result.application.id,
+      status: result.application.status,
+      submittedAt: result.application.submittedAt,
+      service: presentService(result.application.service),
+      submissionTicket: presentSubmissionTicket(result.ticket),
     },
   });
+}
+
+export async function getSubmissionTicket(request: Request, response: Response): Promise<void> {
+  const applicationId = (request.validated!.params as { applicationId: string }).applicationId;
+  const ticket = await applicationSubmissionService.getTicket(request.auth!.userId, applicationId);
+  response.status(200).json({ success: true, data: { submissionTicket: presentSubmissionTicket(ticket) } });
+}
+
+export async function retrySubmissionTicket(request: Request, response: Response): Promise<void> {
+  const applicationId = (request.validated!.params as { applicationId: string }).applicationId;
+  const ticket = await applicationSubmissionService.retryTicket(request.auth!.userId, applicationId);
+  response.status(200).json({ success: true, data: { submissionTicket: presentSubmissionTicket(ticket) } });
 }
 
 export async function getApplicationHistory(request: Request, response: Response): Promise<void> {
@@ -56,4 +72,18 @@ export async function getApplicationHistory(request: Request, response: Response
     success: true,
     data: { history: history.map((entry) => ({ status: entry.status, note: entry.note, createdAt: entry.createdAt })) },
   });
+}
+
+export function presentSubmissionTicket(ticket: SubmissionTicket) {
+  return {
+    ticketId: ticket.id,
+    applicationId: ticket.applicationId,
+    processingState: ticket.status,
+    attemptCount: ticket.attemptCount,
+    createdAt: ticket.createdAt,
+    processingStartedAt: ticket.processingStartedAt,
+    completedAt: ticket.completedAt,
+    failedAt: ticket.failedAt,
+    failureReason: ticket.lastError,
+  };
 }

@@ -26,6 +26,16 @@ enum ApplicationStatus {
   COMPLETED
 }
 
+// Generic citizen-application asynchronous processing states. They remain
+// separate from ApplicationStatus so employee-review lifecycle rules stay
+// unchanged.
+enum ApplicationSubmissionTicketStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum DocumentStatus {
   UPLOADED
   PENDING_VERIFICATION
@@ -107,6 +117,49 @@ enum OfficerReviewStatus {
   REVIEWED
 }
 
+enum ExamStatus {
+  OPEN
+  CLOSED
+}
+
+enum ExamApplicationStatus {
+  DRAFT
+  READY_FOR_SUBMISSION
+  SUBMITTED
+  PAYMENT_CONFIRMED
+  ACCEPTED
+  CORRECTION_WINDOW
+  ADMIT_CARD_AVAILABLE
+  EXAM_COMPLETED
+  ANSWER_KEY_AVAILABLE
+  RESULT_AVAILABLE
+}
+
+enum ExamPaymentStatus {
+  NOT_STARTED
+  PROCESSING
+  SUCCESSFUL
+}
+
+enum ExamDocumentSource {
+  MOCK_ISSUED_DOCUMENT
+}
+
+// These states describe server-side delivery and acceptance of an exam
+// submission intent. Browser queue states intentionally do not cross this
+// boundary.
+enum ExamSubmissionAttemptStatus {
+  RECEIVED
+  ACCEPTED
+  REJECTED_PERMANENT
+}
+
+enum ExamDeadlineAssessment {
+  SERVER_ON_TIME
+  CLIENT_CLAIMED_ON_TIME_UNVERIFIED
+  SERVER_LATE
+}
+
 model User {
   id                  String                     @id @default(uuid()) @map("user_id") @db.Uuid
   email               String                     @unique @db.VarChar(320)
@@ -151,6 +204,8 @@ model CitizenProfile {
   fingerprintSessions FingerprintSession[]
   consents           Consent[]
   generatedDocumentSigningSessions GeneratedDocumentSigningSession[]
+  examApplications   ExamApplication[]
+  submissionTickets  ApplicationSubmissionTicket[]
   conversations      AIConversation[]
 
   @@index([createdAt])
@@ -193,10 +248,138 @@ model MockIssuedDocument {
   updatedAt            DateTime           @updatedAt @map("updated_at")
   demoCitizenProfile   DemoCitizenProfile @relation(fields: [demoCitizenProfileId], references: [id], onDelete: Cascade)
   applicationMockIssuedDocuments ApplicationMockIssuedDocument[]
+  examApplicationDocuments ExamApplicationDocument[]
 
   @@index([demoCitizenProfileId, status])
   @@index([documentType])
   @@map("mock_issued_documents")
+}
+
+model GovernmentExam {
+  id                   String            @id @default(uuid()) @map("government_exam_id") @db.Uuid
+  slug                 String            @unique @db.VarChar(120)
+  name                 String            @db.VarChar(250)
+  conductingAuthority  String            @map("conducting_authority") @db.VarChar(250)
+  description          String
+  status               ExamStatus        @default(OPEN)
+  applicationStartDate DateTime          @map("application_start_date") @db.Date
+  // UTC instant used for all authoritative deadline decisions. The legacy
+  // date-only field remains temporarily for compatibility with existing UI.
+  applicationDeadlineAt DateTime         @map("application_deadline_at")
+  applicationTimeZone String             @map("application_time_zone") @db.VarChar(64)
+  applicationEndDate   DateTime          @map("application_end_date") @db.Date
+  applicationFeePaise Int               @map("application_fee_paise")
+  eligibility          String
+  examDate             DateTime          @map("exam_date") @db.Date
+  vacancyCount         Int               @map("vacancy_count")
+  notificationContent  Json              @map("notification_content")
+  isDemo               Boolean           @default(true) @map("is_demo")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  requirements         ExamRequirement[]
+  applications         ExamApplication[]
+  @@map("government_exams")
+}
+
+model ExamRequirement {
+  id                  String         @id @default(uuid()) @map("exam_requirement_id") @db.Uuid
+  examId              String         @map("government_exam_id") @db.Uuid
+  name                String         @db.VarChar(200)
+  documentType        String         @map("document_type") @db.VarChar(150)
+  isRequired          Boolean        @default(true) @map("is_required")
+  sortOrder           Int            @default(0) @map("sort_order")
+  issuableServiceSlug String?        @map("issuable_service_slug") @db.VarChar(100)
+  exam                GovernmentExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  documents           ExamApplicationDocument[]
+  @@unique([examId, name])
+  @@map("exam_requirements")
+}
+
+model ExamApplication {
+  id                String                @id @default(uuid()) @map("exam_application_id") @db.Uuid
+  applicationNumber String                @unique @map("application_number") @db.VarChar(100)
+  citizenId         String                @map("citizen_id") @db.Uuid
+  examId            String                @map("government_exam_id") @db.Uuid
+  status            ExamApplicationStatus @default(DRAFT)
+  paymentStatus     ExamPaymentStatus     @default(NOT_STARTED) @map("payment_status")
+  formData          Json?                 @map("form_data")
+  submittedAt       DateTime?             @map("submitted_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  citizen           CitizenProfile        @relation(fields: [citizenId], references: [id], onDelete: Restrict)
+  exam              GovernmentExam        @relation(fields: [examId], references: [id], onDelete: Restrict)
+  documents         ExamApplicationDocument[]
+  timelineEvents    ExamTimelineEvent[]
+  reminder          ExamReminder?
+  submissionAttempts ExamSubmissionAttempt[]
+  @@unique([citizenId, examId])
+  @@index([citizenId, updatedAt])
+  @@map("exam_applications")
+}
+
+// A durable backend receipt for one browser submission intent. It records
+// server observations; clientCapturedAt is never an official deadline clock.
+model ExamSubmissionAttempt {
+  id                   String                      @id @default(uuid()) @map("exam_submission_attempt_id") @db.Uuid
+  applicationId        String                      @map("exam_application_id") @db.Uuid
+  idempotencyKey       String                      @unique @map("idempotency_key") @db.Uuid
+  payloadHash          String                      @map("payload_hash") @db.Char(64)
+  clientCapturedAt     DateTime                    @map("client_captured_at")
+  serverReceivedAt     DateTime                    @map("server_received_at")
+  serverAcceptedAt     DateTime?                   @map("server_accepted_at")
+  deadlineAtSnapshot   DateTime                    @map("deadline_at_snapshot")
+  deadlineAssessment   ExamDeadlineAssessment      @map("deadline_assessment")
+  status               ExamSubmissionAttemptStatus @default(RECEIVED)
+  deliveryAttemptCount Int                         @default(1) @map("delivery_attempt_count")
+  lastDeliveryAt       DateTime?                   @map("last_delivery_at")
+  failureCode          String?                     @map("failure_code") @db.VarChar(100)
+  createdAt            DateTime                    @default(now()) @map("created_at")
+  updatedAt            DateTime                    @updatedAt @map("updated_at")
+  application          ExamApplication             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@index([applicationId, status])
+  @@index([status, createdAt])
+  @@map("exam_submission_attempts")
+}
+
+model ExamApplicationDocument {
+  id                   String              @id @default(uuid()) @map("exam_application_document_id") @db.Uuid
+  examApplicationId    String              @map("exam_application_id") @db.Uuid
+  requirementId        String              @map("exam_requirement_id") @db.Uuid
+  mockIssuedDocumentId String              @map("mock_issued_document_id") @db.Uuid
+  source               ExamDocumentSource  @default(MOCK_ISSUED_DOCUMENT)
+  attachedAt           DateTime            @default(now()) @map("attached_at")
+  application          ExamApplication     @relation(fields: [examApplicationId], references: [id], onDelete: Cascade)
+  requirement          ExamRequirement     @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  mockIssuedDocument   MockIssuedDocument  @relation(fields: [mockIssuedDocumentId], references: [id], onDelete: Restrict)
+  @@unique([examApplicationId, requirementId])
+  @@map("exam_application_documents")
+}
+
+model ExamTimelineEvent {
+  id                String          @id @default(uuid()) @map("exam_timeline_event_id") @db.Uuid
+  examApplicationId String          @map("exam_application_id") @db.Uuid
+  eventType         String          @map("event_type") @db.VarChar(100)
+  title             String          @db.VarChar(200)
+  description       String
+  targetDate        DateTime        @map("target_date") @db.Date
+  status            String          @db.VarChar(50)
+  sortOrder         Int             @default(0) @map("sort_order")
+  application       ExamApplication @relation(fields: [examApplicationId], references: [id], onDelete: Cascade)
+  @@index([examApplicationId, sortOrder])
+  @@map("exam_timeline_events")
+}
+
+model ExamReminder {
+  id                String          @id @default(uuid()) @map("exam_reminder_id") @db.Uuid
+  examApplicationId String          @unique @map("exam_application_id") @db.Uuid
+  reminderType      String          @map("reminder_type") @db.VarChar(100)
+  targetDate        DateTime        @map("target_date") @db.Date
+  enabled           Boolean         @default(true)
+  createdAt         DateTime        @default(now()) @map("created_at")
+  application       ExamApplication @relation(fields: [examApplicationId], references: [id], onDelete: Cascade)
+  @@map("exam_reminders")
 }
 
 model RefreshToken {
@@ -287,6 +470,7 @@ model Application {
   consents              Consent[]
   statusHistory         ApplicationStatusHistory[]
   generatedDocuments    GeneratedDocument[]
+  submissionTicket      ApplicationSubmissionTicket?
   notifications         Notification[]
   conversations         AIConversation[]
 
@@ -295,6 +479,30 @@ model Application {
   @@index([status, createdAt])
   @@index([assignedOfficerId, reviewStatus])
   @@map("applications")
+}
+
+// One durable ticket represents one logical generic-application submission.
+// The application uniqueness constraint prevents different idempotency keys
+// from ever creating duplicate submissions for the same application.
+model ApplicationSubmissionTicket {
+  id             String                            @id @default(uuid()) @map("application_submission_ticket_id") @db.Uuid
+  applicationId  String                            @unique @map("application_id") @db.Uuid
+  citizenId      String                            @map("citizen_id") @db.Uuid
+  idempotencyKey String                            @unique @map("idempotency_key") @db.Uuid
+  status         ApplicationSubmissionTicketStatus @default(PENDING)
+  processingStartedAt DateTime?                    @map("processing_started_at")
+  completedAt    DateTime?                         @map("completed_at")
+  failedAt       DateTime?                         @map("failed_at")
+  attemptCount   Int                               @default(0) @map("attempt_count")
+  lastError      String?                           @map("last_error") @db.VarChar(250)
+  createdAt      DateTime                          @default(now()) @map("created_at")
+  updatedAt      DateTime                          @updatedAt @map("updated_at")
+  application    Application                       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  citizen        CitizenProfile                    @relation(fields: [citizenId], references: [id], onDelete: Restrict)
+
+  @@index([citizenId, createdAt])
+  @@index([status, createdAt])
+  @@map("application_submission_tickets")
 }
 
 model Document {

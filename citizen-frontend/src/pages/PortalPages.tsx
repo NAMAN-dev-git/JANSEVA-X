@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { citizenApi } from "../api/citizen";
 import { ApiError, saveBlob } from "../api/client";
 import { useAuth } from "../app/AuthContext";
-import { DemoNotice, EmptyState, ErrorMessage, Loading, StatusBadge, SuccessMessage, formatDate } from "../components/Ui";
-import type { ApplicationDetail, ApplicationSummary, GeneratedDocument, MockIssuedDocument, Service } from "../types/api";
+import { DataSummary, DemoNotice, EmptyState, ErrorMessage, Loading, StatusBadge, SuccessMessage, formatDate } from "../components/Ui";
+import type { ApplicationDetail, ApplicationSummary, GeneratedDocument, MockIssuedDocument, Service, SubmissionTicket } from "../types/api";
+import { useCopilot } from "../copilot/CopilotContext";
 
 function useRequest<T>(request: () => Promise<T>, dependencies: unknown[]) {
   const [data, setData] = useState<T | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
@@ -42,21 +43,24 @@ export function ApplicationsPage() {
 export function ApplicationDetailPage() {
   const { applicationId = "" } = useParams(); const request = useRequest(() => citizenApi.application(applicationId), [applicationId]);
   if (request.loading && !request.data) return <Loading label="Loading application" />; if (request.error || !request.data) return <ErrorMessage message={request.error || "Application not found."} />; const application = request.data.application;
-  return <><Link className="back-link" to="/applications">Back to applications</Link><section className="hero split"><div><p className="eyebrow">APPLICATION {application.applicationNumber}</p><h1>{application.service.name}</h1><p>Created {formatDate(application.createdAt)}</p></div><StatusBadge status={application.status} /></section><ApplicationActions application={application} reload={request.reload} />{application.status === "DRAFT" ? <DraftEditor application={application} reload={request.reload} /> : <section className="detail-grid"><section className="card"><h2>Application data</h2>{application.applicationData ? <pre>{JSON.stringify(application.applicationData, null, 2)}</pre> : <p>No additional draft data has been saved.</p>}</section><section className="card"><h2>Service requirements</h2>{application.service.requirements.map((requirement) => <p key={requirement.requirementId}><strong>{requirement.isRequired ? "Required: " : "Optional: "}</strong>{requirement.name}</p>)}</section></section>}<StatusTimeline application={application} /><GeneratedList applicationId={application.applicationId} applicationStatus={application.status} /></>;
+  return <><Link className="back-link" to="/applications">Back to applications</Link><section className="hero split"><div><p className="eyebrow">APPLICATION {application.applicationNumber}</p><h1>{application.service.name}</h1><p>Created {formatDate(application.createdAt)}</p></div><StatusBadge status={application.status} /></section><ApplicationActions application={application} reload={request.reload} />{application.status === "DRAFT" ? <DraftEditor application={application} reload={request.reload} /> : <section className="detail-grid"><section className="card"><h2>Application data</h2><DataSummary data={application.applicationData} emptyMessage="No additional draft data has been saved." /></section><section className="card"><h2>Service requirements</h2>{application.service.requirements.map((requirement) => <p key={requirement.requirementId}><strong>{requirement.isRequired ? "Required: " : "Optional: "}</strong>{requirement.name}</p>)}</section></section>}<StatusTimeline application={application} /><GeneratedList applicationId={application.applicationId} applicationStatus={application.status} /></>;
 }
 
 function DraftEditor({ application, reload }: { application: ApplicationDetail; reload: () => Promise<void> }) {
+  const { preparationRequest, completePreparation } = useCopilot();
   const [value, setValue] = useState(JSON.stringify(application.applicationData ?? {}, null, 2));
   const [busy, setBusy] = useState(false); const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [error, setError] = useState(""); const [attachmentError, setAttachmentError] = useState(""); const [success, setSuccess] = useState("");
   const issued = useRequest(() => citizenApi.issuedDocuments(), []);
+  const preparationStarted = useRef(false);
   const applicationData = useMemo(() => jsonObject(value) ?? {}, [value]);
   const sourceFields = useMemo(() => documentAutofillMappings(issued.data?.documents ?? []).filter((mapping) => applicationData[mapping.field] === mapping.value), [applicationData, issued.data]);
   const attachmentCandidates = useMemo(() => compatibleMockAttachments(application.service.requirements, issued.data?.documents ?? [], application.mockIssuedDocumentAttachments), [application.mockIssuedDocumentAttachments, application.service.requirements, issued.data]);
   const fieldValue = (field: string) => typeof applicationData[field] === "string" ? applicationData[field] as string : "";
   const updateField = (field: string, nextValue: string | boolean) => setValue(JSON.stringify({ ...applicationData, [field]: nextValue }, null, 2));
   const sourceFor = (field: string) => sourceFields.find((mapping) => mapping.field === field)?.source;
-  const save = async (event: FormEvent) => { event.preventDefault(); setError(""); setSuccess(""); let parsed: unknown; try { parsed = JSON.parse(value); } catch { setError("Additional details must be valid JSON."); return; } if (!parsed || Array.isArray(parsed) || typeof parsed !== "object" || Object.keys(parsed as Record<string, unknown>).length === 0) { setError("Additional details must be a non-empty JSON object."); return; } setBusy(true); try { await citizenApi.updateApplication(application.applicationId, parsed as Record<string, unknown>); await reload(); setSuccess("Draft details saved."); } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to save draft details."); } finally { setBusy(false); } };
+  const saveDraft = async (onComplete?: (success: boolean, detail?: string) => void) => { setError(""); setSuccess(""); let parsed: unknown; try { parsed = JSON.parse(value); } catch { const detail = "Additional details must be valid JSON."; setError(detail); onComplete?.(false, detail); return; } if (!parsed || Array.isArray(parsed) || typeof parsed !== "object" || Object.keys(parsed as Record<string, unknown>).length === 0) { const detail = "Additional details must be a non-empty JSON object."; setError(detail); onComplete?.(false, detail); return; } setBusy(true); try { await citizenApi.updateApplication(application.applicationId, parsed as Record<string, unknown>); await reload(); setSuccess("Draft details saved."); onComplete?.(true); } catch (caught) { const detail = caught instanceof Error ? caught.message : "Unable to save draft details."; setError(detail); onComplete?.(false, detail); } finally { setBusy(false); } };
+  const save = async (event: FormEvent) => { event.preventDefault(); await saveDraft(); };
   const autofill = async () => {
     setError(""); setAttachmentError(""); setSuccess("");
     const current = jsonObject(value);
@@ -89,6 +93,19 @@ function DraftEditor({ application, reload }: { application: ApplicationDetail; 
       : "Form auto-filled. No demo document attachments were created; normal upload remains available.");
     setAttachmentBusy(false);
   };
+  useEffect(() => {
+    if (preparationStarted.current || preparationRequest?.kind !== "service" || preparationRequest.applicationId !== application.applicationId || issued.loading) return;
+    preparationStarted.current = true;
+    void autofill().finally(() => completePreparation(application.applicationId));
+  }, [application.applicationId, issued.loading, preparationRequest, completePreparation]);
+  useEffect(() => {
+    const handleCopilotSave = (event: Event) => {
+      const detail = (event as CustomEvent<{ applicationId?: string; onComplete?: (success: boolean, detail?: string) => void }>).detail;
+      if (detail?.applicationId === application.applicationId && !busy) void saveDraft(detail.onComplete);
+    };
+    window.addEventListener("janseva-ai-save-draft", handleCopilotSave);
+    return () => window.removeEventListener("janseva-ai-save-draft", handleCopilotSave);
+  }, [application.applicationId, busy, value]);
   return <form className="card government-demo-form form-stack" onSubmit={save}>
     <header className="government-demo-header">
       <p className="government-demo-title">GOVERNMENT OF BHARAT — JANSEVA-X DEMO</p>
@@ -178,19 +195,40 @@ function hasValue(value: unknown): boolean { return value !== null && value !== 
 function ApplicationActions({ application, reload }: { application: ApplicationDetail; reload: () => Promise<void> }) {
   const [completeBusy, setCompleteBusy] = useState(false); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const navigate = useNavigate();
   const complete = async () => { setCompleteBusy(true); setError(""); try { const result = await citizenApi.complete(application.applicationId); setSuccess(`Application ${result.status.toLowerCase()} successfully.`); await reload(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to acknowledge completion."); } finally { setCompleteBusy(false); } };
-  return <section className="action-row">{application.status === "DRAFT" && <><Link className="button secondary" to={`/applications/${application.applicationId}/documents`}>Manage documents</Link><Link className="button primary" to={`/applications/${application.applicationId}/verify`}>Verify identity</Link></>}{application.status === "IDENTITY_VERIFIED" && <Link className="button primary" to={`/applications/${application.applicationId}/review`}>Review and submit</Link>}{application.status === "SIGNED" && <button className="button primary" onClick={() => void complete()} disabled={completeBusy}>{completeBusy ? "Acknowledging..." : "Acknowledge completion"}</button>}{application.status === "APPROVED" && <span className="muted">A demo completion certificate will appear here only after external issuance.</span>}{error && <ErrorMessage message={error} />}{success && <SuccessMessage message={success} />}</section>;
+  const signableDocument = application.generatedDocuments.find((document) => document.signatureStatus !== "SIGNED");
+  return <section className="action-row">{application.status === "DRAFT" && <><Link className="button secondary" to={`/applications/${application.applicationId}/documents`}>Manage documents</Link><Link className="button primary" to={`/applications/${application.applicationId}/verify`}>Verify identity</Link></>}{application.status === "IDENTITY_VERIFIED" && <Link className="button primary" to={`/applications/${application.applicationId}/review`}>Review and submit</Link>}{application.status === "SUBMITTED" && <Link className="button primary" to={`/submitted/${application.applicationId}`}>View processing status</Link>}{application.status === "SIGNED" && <><span className="muted">Mock e-sign recorded. Confirm completion to finish this DEMO / PROTOTYPE workflow.</span><button className="button primary" onClick={() => void complete()} disabled={completeBusy}>{completeBusy ? "Acknowledging..." : "Acknowledge completion"}</button></>}{application.status === "APPROVED" && (signableDocument ? <><span className="muted">Application approved. A generated demo document is ready for your explicit mock e-sign.</span><Link className="button primary" to={`/documents/${signableDocument.generatedDocumentId}/sign?application=${application.applicationId}`}>Review and mock e-sign</Link></> : <span className="muted">Application approved. A generated demo document will appear here after authorized issuance.</span>)}{application.status === "COMPLETED" && <span className="muted">Application completed through the citizen-owned DEMO / PROTOTYPE mock signing workflow.</span>}{error && <ErrorMessage message={error} />}{success && <SuccessMessage message={success} />}</section>;
 }
 
 function StatusTimeline({ application }: { application: ApplicationDetail }) { return <section className="card timeline"><h2>Application timeline</h2>{application.statusHistory.map((entry, index) => <div className="timeline-entry" key={`${entry.status}-${entry.createdAt}-${index}`}><StatusBadge status={entry.status} /><div><p>{entry.note ?? "Status updated"}</p><small>{formatDate(entry.createdAt)}</small></div></div>)}</section>; }
 
 export function DraftReviewPage() {
   const { applicationId = "" } = useParams(); const request = useRequest(() => citizenApi.application(applicationId), [applicationId]); const navigate = useNavigate(); const [confirmed, setConfirmed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const submit = async () => { setBusy(true); setError(""); try { const result = await citizenApi.submit(applicationId); navigate(`/submitted/${applicationId}`, { state: result }); } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to submit application."); } finally { setBusy(false); } };
+  const submit = async () => { if (busy) return; setBusy(true); setError(""); try { const result = await citizenApi.submit(applicationId, crypto.randomUUID()); navigate(`/submitted/${applicationId}`, { state: result }); } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to submit application."); } finally { setBusy(false); } };
   if (request.loading) return <Loading label="Loading application review" />; if (request.error || !request.data) return <ErrorMessage message={request.error || "Application not found."} />; const application = request.data.application;
-  return <><Link className="back-link" to={`/applications/${applicationId}`}>Back to application</Link><section className="hero"><p className="eyebrow">APPLICATION REVIEW</p><h1>Review and submit</h1><p>{application.service.name} - {application.applicationNumber}</p></section><DemoNotice>{"Submission is available only after the backend confirms the application status as Identity verified (demo)."}</DemoNotice><section className="card"><h2>Documents</h2>{application.documents.length ? application.documents.map((document) => <p key={document.documentId}>{document.originalFilename} <span className="muted">({document.status})</span></p>) : <p>No documents are listed.</p>}<h2>Additional data</h2><pre>{JSON.stringify(application.applicationData ?? {}, null, 2)}</pre><label className="checkbox"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />I confirm I have reviewed the application information shown above.</label></section>{error && <ErrorMessage message={error} />}<button className="button primary" disabled={application.status !== "IDENTITY_VERIFIED" || !confirmed || busy} onClick={() => void submit()}>{busy ? "Submitting..." : "Submit application"}</button>{application.status !== "IDENTITY_VERIFIED" && <p className="muted">The backend has not confirmed identity verification for this application yet.</p>}</>;
+  return <><Link className="back-link" to={`/applications/${applicationId}`}>Back to application</Link><section className="hero"><p className="eyebrow">APPLICATION REVIEW</p><h1>Review and submit</h1><p>{application.service.name} - {application.applicationNumber}</p></section><DemoNotice>{"Submission is available only after the backend confirms the application status as Identity verified (demo)."}</DemoNotice><section className="card"><h2>Documents</h2>{application.documents.length ? application.documents.map((document) => <p key={document.documentId}>{document.originalFilename} <span className="muted">({document.status})</span></p>) : <p>No documents are listed.</p>}<h2>Additional data</h2><DataSummary data={application.applicationData} emptyMessage="No additional application data has been saved." /><label className="checkbox"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />I confirm I have reviewed the application information shown above.</label></section>{error && <ErrorMessage message={error} />}<button className="button primary" disabled={application.status !== "IDENTITY_VERIFIED" || !confirmed || busy} onClick={() => void submit()}>{busy ? "Submitting..." : "Submit application"}</button>{application.status !== "IDENTITY_VERIFIED" && <p className="muted">The backend has not confirmed identity verification for this application yet.</p>}</>;
 }
 
-export function SubmittedPage() { const { applicationId = "" } = useParams(); return <section className="success-panel"><p className="eyebrow">SUBMITTED</p><h1>Application submitted successfully</h1><p>Your application has been submitted and is awaiting external review.</p><Link className="button primary" to={`/applications/${applicationId}`}>Track application</Link><Link className="button secondary" to="/">Return to dashboard</Link></section>; }
+export function SubmittedPage() {
+  const { applicationId = "" } = useParams();
+  const [ticket, setTicket] = useState<SubmissionTicket | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [retrying, setRetrying] = useState(false); const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    let active = true; let timer: number | undefined;
+    const load = async () => {
+      try {
+        const result = await citizenApi.submissionTicket(applicationId);
+        if (!active) return;
+        setTicket(result.submissionTicket); setError("");
+        if (result.submissionTicket.processingState === "PENDING" || result.submissionTicket.processingState === "PROCESSING") timer = window.setTimeout(() => { void load(); }, 5_000);
+      } catch (caught) { if (active) setError(caught instanceof Error ? caught.message : "Unable to load submission processing status."); }
+      finally { if (active) setLoading(false); }
+    };
+    void load();
+    return () => { active = false; if (timer !== undefined) window.clearTimeout(timer); };
+  }, [applicationId, refresh]);
+  const retry = async () => { if (retrying) return; setRetrying(true); setError(""); try { const result = await citizenApi.retrySubmissionTicket(applicationId); setTicket(result.submissionTicket); setLoading(true); setRefresh((value) => value + 1); } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to retry background processing."); } finally { setRetrying(false); } };
+  const current = ticket?.processingState ?? "PENDING";
+  return <section className="success-panel"><p className="eyebrow">SUBMISSION RECEIVED</p><h1>Application processing</h1><p>Your application has been received. JANSEVA-X is processing it in the background. You do not need to keep this page open.</p>{loading && !ticket && <Loading label="Loading submission status" />}{error && <ErrorMessage message={error} />}{ticket && <section className="submission-tracker" aria-live="polite"><p className="muted">Tracking ticket: {ticket.ticketId}</p><ol className="submission-steps"><li className="complete">Submitted</li><li className={current === "PROCESSING" ? "active" : current === "COMPLETED" ? "complete" : ""}>Processing</li><li className={current === "COMPLETED" ? "complete" : current === "FAILED" ? "failed" : ""}>{current === "FAILED" ? "Processing failed" : "Completed"}</li></ol><p><strong>Current state:</strong> {current.replace("_", " ")}</p><p className="muted">Attempts: {ticket.attemptCount}. Received {formatDate(ticket.createdAt)}.</p>{ticket.processingStartedAt && <p className="muted">Processing started {formatDate(ticket.processingStartedAt)}.</p>}{ticket.completedAt && <SuccessMessage message={`Background processing completed ${formatDate(ticket.completedAt)}.`} />}{current === "FAILED" && <><ErrorMessage message={ticket.failureReason ?? "Background processing could not be completed."} /><button className="button primary" onClick={() => void retry()} disabled={retrying}>{retrying ? "Retrying..." : "Retry processing"}</button></>}</section>}<Link className="button secondary" to={`/applications/${applicationId}`}>View application</Link><Link className="button secondary" to="/">Return to dashboard</Link></section>;
+}
 
 export function ProfilePage() {
   const { user, refreshUser } = useAuth(); const request = useRequest(() => citizenApi.profile(), []); const [form, setForm] = useState<Record<string, string>>({}); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [success, setSuccess] = useState("");

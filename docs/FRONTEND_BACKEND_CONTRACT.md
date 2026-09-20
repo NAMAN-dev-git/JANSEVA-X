@@ -12,8 +12,8 @@ All backend integrations are prototype/demo implementations. JANSEVA-X must pres
 
 ## Runtime and integration baseline
 
-- API base URL: frontend-configured environment variable (recommended: `VITE_API_BASE_URL`), with no secrets in the frontend. Local backend base is `http://localhost:4000/api` when the backend uses its example environment.
-- CORS: backend expects `CORS_ORIGIN` to include the frontend origin; its example is `http://localhost:5173`.
+- API base URL: frontend-configured `VITE_API_URL` environment variable, with no secrets in the frontend. Local backend base is `http://localhost:4000/api` when the backend uses its example environment.
+- CORS: backend expects `CORS_ORIGIN` to include the frontend origin; the local example allows Vite development (`http://localhost:5173`) and preview (`http://localhost:4173`).
 - API envelope: normal JSON responses are `{ success: true, data: ... }`. Errors are `{ success: false, error: { code, message, details? }, requestId }` (Zod validation includes `details`). `204` logout and document deletion return no body.
 - Protected citizen routes require `Authorization: Bearer <accessToken>`, an active account, and JWT role `CITIZEN`. `401` requires refresh/login; `403` means an inactive account or an unsupported role.
 - Access/refresh token expiry and refresh-token rotation are backend-owned. The frontend must use `/auth/refresh` only with its current refresh token and replace both tokens after a successful refresh.
@@ -268,7 +268,7 @@ citizen-frontend/
     lib/                 # validation, dates, QR parsing/generation
     styles/
     types/               # API DTOs matching this contract
-  .env.example           # VITE_API_BASE_URL only; no secret
+  .env.example           # VITE_API_URL only; no secret
 ```
 
 ## Recommended implementation order (after approval)

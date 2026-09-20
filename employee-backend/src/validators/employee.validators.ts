@@ -38,6 +38,6 @@ export const queueSchema = z.object({ body: empty, params: empty, query: registr
 export const dashboardSchema = z.object({ body: empty, params: empty, query: empty });
 export const completedSchema = z.object({ body: empty, params: empty, query: completedQuery });
 export const assignmentSchema = z.object({ body: z.object({ officerId: uuid.nullable() }).strict(), params: z.object({ applicationId: uuid }).strict(), query: empty });
-export const decisionSchema = z.object({ body: z.object({ status: z.enum(["CORRECTION_REQUIRED", "APPROVED", "REJECTED", "SIGNED", "COMPLETED"]), note: z.string().trim().min(3).max(1000) }).strict(), params: z.object({ applicationId: uuid }).strict(), query: empty });
+export const decisionSchema = z.object({ body: z.object({ status: z.enum(["CORRECTION_REQUIRED", "APPROVED", "REJECTED"]), note: z.string().trim().min(3).max(1000) }).strict(), params: z.object({ applicationId: uuid }).strict(), query: empty });
 export const documentReviewSchema = z.object({ body: z.object({ action: z.enum(["VERIFY", "REJECT", "REQUEST_CORRECTION"]), note: z.string().trim().min(3).max(1000) }).strict(), params: z.object({ documentId: uuid }).strict(), query: empty });
 export const identityReviewSchema = z.object({ body: z.object({ action: z.enum(["VERIFY", "REJECT", "REQUEST_MANUAL_REVIEW"]), note: z.string().trim().min(3).max(1000) }).strict(), params: z.object({ applicationId: uuid, verificationId: uuid }).strict(), query: empty });

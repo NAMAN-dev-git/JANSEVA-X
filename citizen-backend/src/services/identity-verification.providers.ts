@@ -9,7 +9,7 @@ function reference(prefix: string, seed: string): string {
 export class MockAadhaarProvider {
   verify(input: { applicationId: string; aadhaar: string }) {
     const digits = input.aadhaar.replace(/\D/g, "");
-    const lastFour = digits.length >= 4 ? digits.slice(-4) : input.aadhaar.slice(-4);
+    const lastFour = digits.length >= 4 ? digits.slice(-4) : digits.padStart(4, "0").slice(-4);
     return { maskedAadhaar: `XXXX-XXXX-${lastFour}`, referenceId: reference("AADHAAR", `${input.applicationId}:${lastFour}`), provider: "MOCK_AADHAAR" };
   }
 }

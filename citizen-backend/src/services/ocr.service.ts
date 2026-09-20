@@ -1,6 +1,6 @@
 import { recognize } from "tesseract.js";
 import { AppError } from "../utils/app-error";
-import { assertImageDimensions } from "./document-file-validation";
+import { assertValidImageContents } from "./document-file-validation";
 
 const MAX_CONCURRENT_OCR = 2;
 const OCR_TIMEOUT_MS = 30_000;
@@ -34,8 +34,11 @@ export class TesseractOcrProvider implements OcrProvider {
       if (result.numpages > MAX_PDF_PAGES) throw new AppError(`PDF exceeds the ${MAX_PDF_PAGES}-page processing limit`, 422);
       return limitText(result.text);
     }
-    assertImageDimensions(input.contents, input.mimeType);
-    const result = await recognize(input.contents, "eng");
+    assertValidImageContents(input.contents, input.mimeType);
+    // Tesseract otherwise rethrows worker decode errors outside the returned
+    // promise. Keep malformed-but-signature-valid images as a controlled OCR
+    // failure that the route can present to the citizen.
+    const result = await recognize(input.contents, "eng", { errorHandler: () => undefined });
     return limitText(result.data.text);
   }
 }

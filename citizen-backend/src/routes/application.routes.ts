@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createApplication, getApplication, getApplicationHistory, listApplications, submitApplication, updateApplication } from "../controllers/application.controller";
+import { createApplication, getApplication, getApplicationHistory, getSubmissionTicket, listApplications, retrySubmissionTicket, submitApplication, updateApplication } from "../controllers/application.controller";
 import { listApplicationDocuments, uploadApplicationDocument } from "../controllers/document.controller";
 import { attachMockIssuedDocument } from "../controllers/mock-issued-document-attachment.controller";
 import { completeGeneratedDocumentWorkflow, listGeneratedDocuments } from "../controllers/generated-document.controller";
@@ -27,6 +27,8 @@ applicationRouter.post("/", validate(createApplicationRequestSchema), asyncHandl
 applicationRouter.get("/", validate(listApplicationsRequestSchema), asyncHandler(listApplications));
 applicationRouter.post("/:applicationId/documents", validate(applicationDocumentUploadParamsSchema), documentUpload.single("file"), asyncHandler(uploadApplicationDocument));
 applicationRouter.get("/:applicationId/documents", validate(applicationIdParamsSchema), asyncHandler(listApplicationDocuments));
+applicationRouter.get("/:applicationId/submission-ticket", validate(applicationIdParamsSchema), asyncHandler(getSubmissionTicket));
+applicationRouter.post("/:applicationId/submission-ticket/retry", validate(applicationIdParamsSchema), asyncHandler(retrySubmissionTicket));
 applicationRouter.post("/:applicationId/mock-issued-document-attachments", validate(attachMockIssuedDocumentRequestSchema), asyncHandler(attachMockIssuedDocument));
 applicationRouter.get("/:applicationId/generated-documents", validate(generatedDocumentListSchema), asyncHandler(listGeneratedDocuments));
 applicationRouter.post("/:applicationId/verifications/aadhaar", validate(aadhaarVerificationSchema), asyncHandler(verifyAadhaar));

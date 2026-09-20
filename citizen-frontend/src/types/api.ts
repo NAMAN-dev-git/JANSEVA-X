@@ -46,9 +46,83 @@ export interface User {
 }
 
 export interface TokenPair { accessToken: string; refreshToken: string; tokenType: "Bearer"; expiresIn: string }
+export type ExamDeadlineAssessment = "SERVER_ON_TIME" | "CLIENT_CLAIMED_ON_TIME_UNVERIFIED" | "SERVER_LATE";
+export type ExamSubmissionReceiptStatus = "RECEIVED" | "ACCEPTED" | "REJECTED_PERMANENT";
+export interface ExamSubmissionReceipt {
+  receiptId: string;
+  applicationId: string;
+  idempotencyKey: string;
+  payloadHash: string;
+  clientCapturedAt: string;
+  serverReceivedAt: string;
+  serverAcceptedAt: string | null;
+  deadlineAtSnapshot: string;
+  deadlineAssessment: ExamDeadlineAssessment;
+  status: ExamSubmissionReceiptStatus;
+  deliveryAttemptCount: number;
+  lastDeliveryAt: string | null;
+  failureCode: string | null;
+}
+export interface ExamSubmissionResult {
+  application: unknown;
+  receipt: ExamSubmissionReceipt | null;
+  accepted: boolean;
+  stableFinalResult: boolean;
+  demoPrototypePolicy: "SERVER_ON_TIME" | "CLIENT_CLAIMED_ON_TIME_UNVERIFIED_ACCEPTED_FOR_DEMO" | null;
+  governmentAccepted: false;
+  mode: "DEMO/PROTOTYPE";
+  payment: string;
+}
+export type ExamLocalSyncState = "QUEUED_OFFLINE" | "SYNCING" | "RETRY_SCHEDULED" | "AUTH_REQUIRED" | "SERVER_CONFIRMED" | "PERMANENT_FAILURE";
+export interface ExamOfflineDraft {
+  userId: string;
+  applicationId: string;
+  examId: string;
+  formData: Record<string, unknown>;
+  step: number;
+  baseServerUpdatedAt: string | null;
+  localUpdatedAt: string;
+  dirty: boolean;
+  conflictState: "NONE" | "SERVER_DRAFT_NEWER";
+  version: 1;
+}
+export interface ExamSubmissionIntent {
+  userId: string;
+  applicationId: string;
+  idempotencyKey: string;
+  payloadHash: string;
+  clientCapturedAt: string;
+  createdAt: string;
+  syncState: ExamLocalSyncState;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  nextAttemptAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  receipt: Pick<ExamSubmissionReceipt, "receiptId" | "serverReceivedAt" | "serverAcceptedAt" | "deadlineAssessment" | "failureCode" | "status"> | null;
+}
 export interface ServiceRequirement { requirementId: string; serviceId: string; name: string; description: string | null; isRequired: boolean; sortOrder: number; configuration?: string }
 export interface Service { serviceId: string; name: string; slug: string; description: string | null; isActive: boolean; isPrototype: boolean; requirements?: ServiceRequirement[] }
 export interface ApplicationSummary { applicationId: string; applicationNumber: string; service: Service; status: ApplicationStatus; createdAt: string; updatedAt: string; submittedAt: string | null; latestStatusAt: string }
+export type SubmissionTicketProcessingState = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+export interface SubmissionTicket {
+  ticketId: string;
+  applicationId: string;
+  processingState: SubmissionTicketProcessingState;
+  attemptCount: number;
+  createdAt: string;
+  processingStartedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  failureReason: string | null;
+}
+export interface ApplicationSubmissionResult {
+  applicationId: string;
+  status: ApplicationStatus;
+  submittedAt: string;
+  service: Service;
+  submissionTicket: SubmissionTicket;
+}
 export interface ApplicationDocument { documentId: string; documentType: string; expectedDocumentType: string | null; originalFilename: string; mimeType: string; fileSizeBytes: number; sha256: string; status: string; rejectionReason?: string | null; uploadedAt: string }
 export interface MockIssuedDocumentAttachment {
   attachmentId: string;

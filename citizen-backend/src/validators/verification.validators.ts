@@ -2,8 +2,8 @@ import { z } from "zod";
 
 const uuid = z.string().uuid();
 const empty = z.object({}).strict();
-const aadhaarValue = z.string().trim().regex(/^(?:\d{4}[ -]?\d{4}[ -]?\d{4}|XXXX[ -]?XXXX[ -]?\d{4})$/, "aadhaar must be a 12-digit or masked demo Aadhaar value");
-const panValue = z.string().trim().toUpperCase().regex(/^[A-Z]{5}(?:\d{4}|\*{4})[A-Z]$/, "pan must be a demo PAN or masked PAN value");
+const aadhaarValue = z.string().trim().regex(/^(?:\d{4}[ -]?\d{4}[ -]?\d{4}|XXXX[ -]?XXXX[ -]?\d{4}|MOCK-AADHAAR-DP\d{3})$/, "aadhaar must be a 12-digit or masked demo Aadhaar value");
+const panValue = z.string().trim().toUpperCase().regex(/^(?:[A-Z]{5}(?:\d{4}|\*{4})[A-Z]|MOCK-PAN-DP\d{3})$/, "pan must be a demo PAN or masked PAN value");
 
 export const fingerprintSteps = ["RIGHT_INDEX", "RIGHT_MIDDLE", "RIGHT_RING", "RIGHT_PINKY", "RIGHT_THUMB"] as const;
 

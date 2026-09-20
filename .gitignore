@@ -10,3 +10,8 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# Local-only development and verification artifacts
+tmp/
+citizen-backend/eng.traineddata
+citizen-backend/BATCH7_PHASE1_CONTRACT.md

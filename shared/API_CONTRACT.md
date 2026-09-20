@@ -215,3 +215,27 @@ The detailed review payload contains the authorized minimal applicant context, a
 Identity review accepts only `VERIFY`, `REJECT`, or `REQUEST_MANUAL_REVIEW`. It operates only on an existing `AADHAAR`, `PAN`, `FACE`, `FINGERPRINT`, or `E_KYC` verification belonging to the specified application; `DOCUMENT` verifications are excluded. The action updates the existing verification status, failure reason, and verification timestamp as applicable, and appends an audit history entry using the current application status. It does not create verification records, change application status, or independently approve/reject an application.
 
 When persisted document analysis is structurally valid, review responses expose only an allowlisted advisory diagnostic: detected document type, confidence, readability, missing fields, detected issues, signature/seal availability, and recommendation. Extracted fields such as document number, address, phone, and name, along with OCR text and arbitrary stored analysis data, are never returned. Diagnostics are explicitly `DEMO/PROTOTYPE` and require authorized human review; they never determine an application outcome. Malformed or absent analysis produces no diagnostics.
+
+## Citizen/Employee integration and Employee Backend API (Batch 4)
+
+The canonical lifecycle for a citizen application is:
+
+```text
+DRAFT -> IDENTITY_VERIFIED -> SUBMITTED -> UNDER_REVIEW
+```
+
+The citizen backend moves a draft to `IDENTITY_VERIFIED` only after the four core DEMO verification records (Aadhaar, PAN, face, and fingerprint) are verified. The citizen must then explicitly submit the application before it can be claimed or reviewed by an employee. `IDENTITY_VERIFIED` applications are not employee-claimable or reviewable. Admin assignment is similarly limited to submitted, not-yet-reviewed work.
+
+Employee decision requests are limited to `CORRECTION_REQUIRED`, `APPROVED`, and `REJECTED`. `SIGNED` and `COMPLETED` cannot be forced through the employee decision API. They remain downstream states owned by the existing citizen mock e-sign and completion workflow.
+
+| Method | Path | Authorization | Request | Success response |
+| --- | --- | --- | --- | --- |
+| POST | `/api/employee/applications/:applicationId/generated-documents/issue` | Assigned OFFICER or ADMIN bearer | Empty body | Canonically issued safe mock completion-document metadata |
+
+The issuance bridge forwards the authenticated officer/admin request to the existing citizen-backend canonical issuer. It does not duplicate rendering, storage, integrity checking, signing-session, or consent logic. Issuance is available only after `APPROVED` and retains the citizen-backend issuance idempotency and authorization safeguards.
+
+Employee application detail and review responses include a separate `mockIssuedDocumentAttachments` collection. These are read-only `DEMO/PROTOTYPE` registry references and are never mixed into uploaded `documents` or submitted to uploaded-document review APIs. Each attachment exposes only attachment/requirement metadata plus safe mock document reference fields: document ID, type, display name, issuer, dates, status, demo flag, and mode. It excludes profile linkage, OTPs, structured registry fields, storage values, hashes, bytes, OCR, and provider payloads.
+
+Employee application detail, review, and completed-registry responses also project safe `generatedDocuments` metadata: generated-document ID, type/name, signature state, generated/signed timestamps, and a safe latest signing-session state. Storage keys, bytes, hashes, signing challenges, consent contents, and provider payloads are excluded.
+
+After an employee approves an application and issues its mock completion certificate, only the owning citizen may start and complete the existing mock signing session and consent. Successful mock signing moves the application to `SIGNED`; the citizen completion action then moves it to `COMPLETED`. No real e-sign, government identity, biometric, or provider integration occurs.
