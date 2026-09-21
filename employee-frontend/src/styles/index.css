@@ -1843,6 +1843,11 @@ h2 {
   cursor: not-allowed;
 }
 
+.profile-actions__buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.profile-actions .profile-sign-out { border-color: #e4bec3; background: #ffffff; color: #992e38; cursor: pointer; }
+.profile-actions .profile-sign-out:hover { border-color: #c87881; background: #fff5f5; }
+.profile-actions .profile-sign-out:focus-visible { outline: 3px solid rgb(153 46 56 / 22%); outline-offset: 2px; }
+
 @media (max-width: 900px) {
   .profile-grid { grid-template-columns: 1fr; }
 }

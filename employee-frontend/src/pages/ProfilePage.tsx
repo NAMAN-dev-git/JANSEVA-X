@@ -85,7 +85,10 @@ export function ProfilePage({ onNavigateApplications, onNavigateCompleted, onNav
             <h2 id="profile-actions-title">Profile management</h2>
             <p>Profile editing is intentionally unavailable in this prototype.</p>
           </div>
-          <button type="button" disabled>Edit profile unavailable</button>
+          <div className="profile-actions__buttons">
+            <button type="button" disabled>Edit profile unavailable</button>
+            <button className="profile-sign-out" type="button" onClick={onReturnToLogin}>Sign out</button>
+          </div>
         </section>
       </main>
 
