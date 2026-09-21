@@ -1,0 +1,126 @@
+:root {
+  color: #17213a;
+  background: #f5f6fb;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.entry-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: clamp(24px, 5vw, 64px) 20px;
+}
+
+.entry-card {
+  width: min(100%, 620px);
+  border: 1px solid #dce2f0;
+  border-top: 5px solid #1648c9;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: clamp(30px, 6vw, 52px);
+  text-align: center;
+  box-shadow: 0 10px 26px rgb(30 52 104 / 8%);
+}
+
+.service-mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 20px;
+  place-items: center;
+  border-radius: 8px;
+  background: #1648c9;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #2453bd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.085em;
+}
+
+h1, h2, p { margin-top: 0; }
+
+h1 {
+  margin-bottom: 8px;
+  color: #17213a;
+  font-size: clamp(2rem, 5vw, 2.7rem);
+  letter-spacing: -0.04em;
+}
+
+.tagline {
+  margin-bottom: 34px;
+  color: #596276;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.selection {
+  border-top: 1px solid #dce2f0;
+  padding-top: 28px;
+}
+
+h2 {
+  margin-bottom: 18px;
+  color: #2a354c;
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+
+.selection-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.selection-link {
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 13px 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.selection-link.primary {
+  border-color: #103da9;
+  background: #1648c9;
+  color: #ffffff;
+}
+
+.selection-link.primary:hover { background: #103da9; }
+
+.selection-link.secondary {
+  border-color: #bac5da;
+  background: #ffffff;
+  color: #1746a6;
+}
+
+.selection-link.secondary:hover { background: #f1f4ff; }
+
+.selection-link:focus-visible {
+  outline: 3px solid rgb(36 83 189 / 30%);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .entry-card { padding: 30px 22px; }
+  .selection-actions { grid-template-columns: 1fr; }
+}
