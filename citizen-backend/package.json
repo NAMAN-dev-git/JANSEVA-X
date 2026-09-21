@@ -13,7 +13,8 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "prisma:reset-demo-activity": "tsx prisma/reset-demo-activity.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
