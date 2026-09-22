@@ -3,7 +3,9 @@ import path from "path";
 import { inflateSync } from "zlib";
 import { AppError } from "../utils/app-error";
 
-export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+// Vercel Functions reject request payloads above 4.5 MB. Leave multipart
+// headroom so uploads fail through the application rather than at the edge.
+export const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 20_000_000;
 const MAX_PNG_DECOMPRESSED_BYTES = 100 * 1024 * 1024;
 
@@ -16,7 +18,7 @@ const allowedFiles: Record<string, ReadonlySet<string>> = {
 export function assertValidDocumentFile(file: Express.Multer.File): void {
   const extension = path.extname(file.originalname).toLowerCase();
   if (!allowedFiles[file.mimetype]?.has(extension)) throw new AppError("Only PDF, JPG, JPEG, and PNG files are supported", 400);
-  if (file.size > MAX_DOCUMENT_BYTES) throw new AppError("Uploaded file exceeds the 10 MB limit", 413);
+  if (file.size > MAX_DOCUMENT_BYTES) throw new AppError("Uploaded file exceeds the 4 MB limit", 413);
   if (!hasExpectedSignature(file.buffer, file.mimetype)) throw new AppError("File content does not match its declared document type", 400);
   if (file.mimetype !== "application/pdf") assertValidImageContents(file.buffer, file.mimetype);
 }

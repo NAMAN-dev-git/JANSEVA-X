@@ -5,7 +5,8 @@
   "description": "JANSEVA-X citizen backend prototype for applications, documents, mock identity verification, and demo completion workflow",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -14,7 +15,8 @@
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
-    "prisma:reset-demo-activity": "tsx prisma/reset-demo-activity.ts"
+    "prisma:reset-demo-activity": "tsx prisma/reset-demo-activity.ts",
+    "prisma:backfill-local-storage": "tsx prisma/backfill-local-storage.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

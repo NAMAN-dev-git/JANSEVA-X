@@ -1,5 +1,4 @@
 import { ApplicationStatus, Prisma, PrismaClient } from "@prisma/client";
-import { logError } from "../config/logger";
 import { prisma } from "../lib/prisma";
 import { ApplicationSubmissionTicketState, type SubmissionTicket } from "./application-submission.service";
 
@@ -93,9 +92,8 @@ export class PrismaApplicationSubmissionWorkerPersistence implements Application
   }
 }
 
-/** A bounded, database-backed worker suitable for the JANSEVA-X prototype. */
+/** A bounded, database-backed processor invoked by submission requests. */
 export class ApplicationSubmissionWorker {
-  private timer: NodeJS.Timeout | null = null;
   private running = false;
 
   constructor(
@@ -105,17 +103,6 @@ export class ApplicationSubmissionWorker {
     private readonly batchSize = 5,
     private readonly processingLeaseMs = 60_000,
   ) {}
-
-  start(pollIntervalMs: number): void {
-    if (this.timer) return;
-    this.timer = setInterval(() => { void this.runOnce().catch(logError); }, pollIntervalMs);
-  }
-
-  stop(): void {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = null;
-  }
 
   async runOnce(): Promise<number> {
     if (this.running) return 0;

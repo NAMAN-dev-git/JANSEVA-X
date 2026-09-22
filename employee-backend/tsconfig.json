@@ -1,1 +1,1 @@
-{"compilerOptions":{"target":"ES2022","module":"CommonJS","moduleResolution":"Node","rootDir":"src","outDir":"dist","strict":true,"esModuleInterop":true,"skipLibCheck":true,"types":["node","vitest/globals"]},"include":["src/**/*.ts"],"exclude":["dist","node_modules","tests"]}
+{"compilerOptions":{"target":"ES2022","module":"CommonJS","moduleResolution":"Node","rootDir":"src","outDir":"dist","strict":true,"esModuleInterop":true,"skipLibCheck":true,"types":["node","vitest/globals"]},"include":["src/**/*.ts","src/**/*.d.ts"],"exclude":["dist","node_modules","tests"]}

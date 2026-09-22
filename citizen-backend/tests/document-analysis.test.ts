@@ -144,9 +144,9 @@ describe("DocumentService", () => {
     await expect(service.analyze("user-1", document.id)).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it("rejects unsupported MIME/extension and files over 10 MB", async () => {
+  it("rejects unsupported MIME/extension and files over 4 MB", async () => {
     await expect(service.upload("user-1", "application-1", { file: makeFile("bad", "text/plain", "bad.txt") })).rejects.toMatchObject({ statusCode: 400 });
-    const oversized = makeFile(validPng(), "image/png", "large.png"); oversized.size = 10 * 1024 * 1024 + 1;
+    const oversized = makeFile(validPng(), "image/png", "large.png"); oversized.size = 4 * 1024 * 1024 + 1;
     await expect(service.upload("user-1", "application-1", { file: oversized })).rejects.toMatchObject({ statusCode: 413 });
   });
 

@@ -20,7 +20,7 @@ export function errorHandler(error: unknown, request: Request, response: Respons
 
   if (error instanceof MulterError) {
     const statusCode = error.code === "LIMIT_FILE_SIZE" ? 413 : 400;
-    const message = error.code === "LIMIT_FILE_SIZE" ? "Uploaded file exceeds the 10 MB limit" : "File upload could not be processed";
+    const message = error.code === "LIMIT_FILE_SIZE" ? "Uploaded file exceeds the 4 MB limit" : "File upload could not be processed";
     response.status(statusCode).json({ success: false, error: { code: "UPLOAD_ERROR", message }, requestId: request.requestId });
     return;
   }

@@ -1,11 +1,14 @@
 import type { Request, Response } from "express";
 import { ApplicationService } from "../services/application.service";
 import { ApplicationSubmissionService, type SubmissionTicket } from "../services/application-submission.service";
+import { ApplicationSubmissionWorker } from "../services/application-submission-worker.service";
+import { logError } from "../config/logger";
 import type { CreateApplicationRequestBody, ListApplicationsRequestQuery, SubmitApplicationRequestBody, UpdateApplicationRequestBody } from "../validators/application.validators";
 import { presentApplicationDetails, presentApplicationSummary, presentService } from "../utils/application-response";
 
 const applicationService = new ApplicationService();
 const applicationSubmissionService = new ApplicationSubmissionService();
+const applicationSubmissionWorker = new ApplicationSubmissionWorker();
 
 export async function createApplication(request: Request, response: Response): Promise<void> {
   const application = await applicationService.createDraft(request.auth!.userId, request.validated!.body as CreateApplicationRequestBody);
@@ -41,6 +44,7 @@ export async function submitApplication(request: Request, response: Response): P
   const applicationId = (request.validated!.params as { applicationId: string }).applicationId;
   const body = request.validated!.body as SubmitApplicationRequestBody;
   const result = await applicationSubmissionService.submit(request.auth!.userId, { applicationId, idempotencyKey: body.idempotencyKey });
+  await processSubmissionTickets();
   response.status(200).json({
     success: true,
     data: {
@@ -62,7 +66,13 @@ export async function getSubmissionTicket(request: Request, response: Response):
 export async function retrySubmissionTicket(request: Request, response: Response): Promise<void> {
   const applicationId = (request.validated!.params as { applicationId: string }).applicationId;
   const ticket = await applicationSubmissionService.retryTicket(request.auth!.userId, applicationId);
+  await processSubmissionTickets();
   response.status(200).json({ success: true, data: { submissionTicket: presentSubmissionTicket(ticket) } });
+}
+
+/** Vercel has no durable process for polling; complete bounded ticket work while this request is alive. */
+async function processSubmissionTickets(): Promise<void> {
+  await applicationSubmissionWorker.runOnce().catch(logError);
 }
 
 export async function getApplicationHistory(request: Request, response: Response): Promise<void> {
